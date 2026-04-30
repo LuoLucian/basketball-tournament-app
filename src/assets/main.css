@@ -1,0 +1,251 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-dark-900 text-dark-200 antialiased;
+  }
+  /* 滚动条 - 霓虹风格 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-dark-900; }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-700 rounded-full;
+    background-image: linear-gradient(180deg, rgba(59,130,246,0.4) 0%, transparent 100%);
+  }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-dark-600; }
+}
+
+@layer components {
+  /* ═══════ 按钮系统 ═══════ */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           text-sm font-semibold transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-900
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-500
+           active:scale-95 shadow-neon-blue hover:shadow-lg hover:shadow-primary-600/20
+           focus:ring-primary-500;
+  }
+  .btn-accent {
+    @apply btn bg-accent-500 text-white hover:bg-accent-400
+           active:scale-95 shadow-neon-orange hover:shadow-lg hover:shadow-accent-500/20
+           focus:ring-accent-400;
+  }
+  .btn-secondary {
+    @apply btn bg-dark-800 text-dark-300 border border-dark-600
+           hover:bg-dark-700 hover:text-white hover:border-dark-500
+           active:scale-95 focus:ring-dark-500;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-dark-400 hover:bg-dark-800 hover:text-white
+           active:scale-95 focus:ring-dark-600;
+  }
+  .btn-danger {
+    @apply btn bg-danger text-white hover:bg-danger-light
+           active:scale-95 shadow-neon-orange hover:shadow-lg
+           focus:ring-danger;
+  }
+  .btn-lg { @apply px-6 py-3 text-base rounded-2xl; }
+  .btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
+  .btn-icon { @apply p-2 aspect-square rounded-xl; }
+
+  /* ═══════ 表单 ═══════ */
+  .input {
+    @apply block w-full px-4 py-2.5 rounded-xl border bg-dark-800
+           text-sm text-white placeholder-dark-500
+           focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent
+           disabled:bg-dark-850 disabled:cursor-not-allowed
+           border-dark-600 transition-all duration-200;
+  }
+  .input:focus {
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  }
+  .label {
+    @apply block text-sm font-medium text-dark-300 mb-1.5;
+  }
+  .form-group { @apply space-y-1.5; }
+
+  /* ═══════ 卡片系统 ═══════ */
+  .card {
+    @apply bg-dark-850 rounded-2xl border border-dark-700/50
+           transition-all duration-300;
+  }
+  .card:hover {
+    @apply border-dark-600/60;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+  .card-body { @apply p-4; }
+  .card-header {
+    @apply px-4 py-3 border-b border-dark-700/50 flex items-center justify-between;
+  }
+
+  /* ═══════ 徽章 ═══════ */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .badge-blue   { @apply badge bg-primary-600/20 text-primary-400; }
+  .badge-green  { @apply badge bg-success/20 text-success; }
+  .badge-orange { @apply badge bg-accent-500/20 text-accent-400; }
+  .badge-red    { @apply badge bg-danger/20 text-danger-light; }
+  .badge-gray   { @apply badge bg-dark-700/50 text-dark-400; }
+  .badge-purple { @apply badge bg-purple-500/20 text-purple-400; }
+  .badge-yellow { @apply badge bg-yellow-500/20 text-yellow-400; }
+
+  /* ═══════ 分数按钮 ═══════ */
+  .score-btn {
+    @apply flex flex-col items-center justify-center rounded-xl border-2
+           transition-all duration-150 active:scale-95 select-none cursor-pointer
+           font-semibold;
+  }
+
+  /* ═══════ 球员头像 ═══════ */
+  .player-avatar {
+    @apply rounded-full object-cover bg-dark-800 text-primary-400
+           flex items-center justify-center font-semibold
+           border-2 border-dark-700;
+  }
+
+  /* ═══════ 页面容器 ═══════ */
+  .page-container {
+    @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6;
+  }
+
+  /* ═══════ 统计卡片 ═══════ */
+  .stat-card {
+    @apply bg-dark-850 rounded-2xl border border-dark-700/50 p-4 text-center
+           transition-all duration-300;
+  }
+  .stat-card:hover {
+    @apply border-primary-600/30;
+    box-shadow: 0 0 20px rgba(59,130,246,0.08);
+  }
+  .stat-value {
+    @apply text-2xl font-bold bg-gradient-to-r from-primary-400 to-accent-400
+           bg-clip-text text-transparent;
+  }
+  .stat-label {
+    @apply text-xs text-dark-500 mt-1 font-medium;
+  }
+
+  /* ═══════ 骨架屏加载 ═══════ */
+  .skeleton {
+    @apply bg-dark-800 rounded-xl animate-pulse;
+    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* ═══════ 空状态 ═══════ */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-16 text-center;
+  }
+  .empty-state svg {
+    @apply w-24 h-24 text-dark-600 mb-4;
+  }
+
+  /* ═══════ 区域标题 ═══════ */
+  .section-title {
+    @apply text-lg font-bold text-white flex items-center gap-2;
+  }
+  .section-title::before {
+    content: '';
+    @apply w-1 h-5 rounded-full bg-primary-600;
+  }
+
+  /* ═══════ 霓虹发光卡片 ═══════ */
+  .glow-card {
+    @apply bg-dark-850 rounded-2xl border border-primary-600/20 p-4
+           transition-all duration-300;
+  }
+  .glow-card:hover {
+    @apply border-primary-600/40;
+    box-shadow: 0 0 20px rgba(59,130,246,0.15), 0 4px 16px rgba(0,0,0,0.3);
+  }
+
+  /* ═══════ 毛玻璃导航 ═══════ */
+  .glass-nav {
+    @apply bg-dark-900/80 backdrop-blur-xl border-b border-dark-700/50;
+  }
+
+  /* ═══════ 霓虹文字效果 ═══════ */
+  .text-glow-blue {
+    text-shadow: 0 0 10px rgba(59,130,246,0.5), 0 0 30px rgba(59,130,246,0.2);
+  }
+  .text-glow-orange {
+    text-shadow: 0 0 10px rgba(249,115,22,0.5), 0 0 30px rgba(249,115,22,0.2);
+  }
+  .text-glow-green {
+    text-shadow: 0 0 10px rgba(34,197,94,0.5), 0 0 30px rgba(34,197,94,0.2);
+  }
+
+  /* ═══════ 文字渐变 ═══════ */
+  .text-gradient-blue {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%);
+  }
+  .text-gradient-orange {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #fb923c 0%, #f97316 50%, #ea580c 100%);
+  }
+  .text-gradient-accent {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f97316 100%);
+  }
+  .text-gradient-gold {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  }
+
+  /* ═══════ 比分数字特效 ═══════ */
+  .score-text {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* ═══════ 页面标题特效 ═══════ */
+  .page-title {
+    @apply text-xl font-bold text-white tracking-tight;
+    position: relative;
+    display: inline-block;
+  }
+  .page-title::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 40px;
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #3b82f6, #f97316);
+    opacity: 0.6;
+  }
+}
+
+/* 底部导航栏（移动端） */
+.bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom);
+  @apply bg-dark-900/90 backdrop-blur-xl border-t border-dark-700/50;
+}
+
+/* 页面过渡 */
+.page-enter-active { transition: all 0.3s ease-out; }
+.page-leave-active { transition: all 0.15s ease-in; }
+.page-enter-from { opacity: 0; transform: translateY(8px); }
+.page-leave-to { opacity: 0; }
+
+/* 加载动画 */
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+.pulse-ring::before {
+  content: '';
+  @apply absolute inset-0 rounded-full bg-primary-400 opacity-50;
+  animation: pulse-ring 1.2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+}
