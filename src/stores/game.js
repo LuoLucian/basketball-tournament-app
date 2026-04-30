@@ -153,7 +153,13 @@ export const useGameStore = defineStore('game', () => {
       supabase.removeChannel(realtimeChannel.value)
     }
     realtimeChannel.value = supabase
-      .channel(`game:${gameId}`)
+      .channel(`game:${gameId}`, {
+        config: {
+          broadcast: { self: false },
+          presence: { key: '' },
+          private: false
+        }
+      })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'games',
         filter: `id=eq.${gameId}`
@@ -164,8 +170,16 @@ export const useGameStore = defineStore('game', () => {
         event: '*', schema: 'public', table: 'game_lineup',
         filter: `game_id=eq.${gameId}`
       }, () => loadLineup(gameId))
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         isConnected.value = status === 'SUBSCRIBED'
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[GameStore] Realtime 连接异常，5秒后重试...', status, err)
+          setTimeout(() => {
+            if (currentGame.value?.id === gameId) {
+              subscribeRealtime(gameId)
+            }
+          }, 5000)
+        }
       })
   }
 

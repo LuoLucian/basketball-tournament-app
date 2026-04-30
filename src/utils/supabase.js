@@ -12,12 +12,18 @@ export const supabase = createClient(
   supabaseAnonKey || 'placeholder-key',
   {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
     },
     realtime: {
       params: {
         eventsPerSecond: 10
+      }
+    },
+    global: {
+      headers: {
+       apikey: supabaseAnonKey || 'placeholder-key'
       }
     }
   }

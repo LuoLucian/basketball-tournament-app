@@ -123,9 +123,11 @@
 
     <!-- 主内容区 -->
     <main class="flex-1 pb-20 md:pb-6">
-      <router-view v-slot="{ Component }">
+      <router-view v-slot="{ Component, route }">
         <Transition name="page" mode="out-in">
-          <component :is="Component" />
+          <div :key="route.path">
+            <component :is="Component" />
+          </div>
         </Transition>
       </router-view>
     </main>

@@ -25,20 +25,26 @@ export const useAuthStore = defineStore('auth', () => {
         try {
           const parsed = JSON.parse(saved)
           user.value = parsed
-          // 从数据库获取最新 profile
-          const { data } = await supabase
+          // 从数据库获取最新 profile（加 8 秒超时保护）
+          const profilePromise = supabase
             .from('profiles')
             .select('id, username, display_name, avatar_url, role, phone, jersey_no, is_active, created_at, updated_at')
             .eq('id', parsed.id)
             .single()
+          const { data } = await Promise.race([
+            profilePromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+          ])
           if (data) {
             profile.value = data
           } else {
-            // profile 不存在，清除登录状态
             clearAuth()
           }
         } catch {
-          clearAuth()
+          // 网络超时或解析失败时，保留 localStorage 中的用户信息
+          // 不强制登出，等下次成功再更新 profile
+          console.warn('[Auth] profile 加载失败，使用缓存信息')
+          profile.value = user.value ? { ...user.value } : null
         }
       }
     } finally {

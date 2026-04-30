@@ -560,27 +560,49 @@ function canManage(team) {
 // ── 加载球队列表 ──
 async function loadTeams() {
   loading.value = true
-  const { data } = await supabase
-    .from('teams')
-    .select(`*, team_players(count), profiles:owner_id(username, display_name)`)
-    .eq('is_active', true)
-    .order('name')
-  if (data) {
-    teams.value = data.map(t => ({
-      ...t,
-      player_count: t.team_players?.[0]?.count || 0
-    })).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN-u-co-pinyin'))
+  try {
+    // 先尝试带聚合的查询
+    let { data, error } = await supabase
+      .from('teams')
+      .select(`*, team_players(count)`)
+      .eq('is_active', true)
+      .order('name')
+    // 如果聚合查询失败，回退到简单查询
+    if (error) {
+      console.warn('[TeamsView] 聚合查询失败，使用简单查询:', error.message)
+      const res = await supabase
+        .from('teams')
+        .select('*')
+        .eq('is_active', true)
+        .order('name')
+      data = res.data
+    }
+    if (data) {
+      teams.value = data.map(t => ({
+        ...t,
+        player_count: t.team_players?.[0]?.count || 0
+      })).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN-u-co-pinyin'))
+    }
+  } catch (e) {
+    console.error('[TeamsView] loadTeams 失败:', e)
+    teams.value = []
+  } finally {
+    loading.value = false
   }
-  loading.value = false
 }
 
 // ── 加载球员库（添加成员用） ──
 async function loadAllPlayers() {
-  const { data } = await supabase
-    .from('players')
-    .select('id, name, position, height, weight')
-    .eq('is_active', true)
-  if (data) allPlayers.value = data
+  try {
+    const { data, error } = await supabase
+      .from('players')
+      .select('id, name, position, height, weight')
+      .eq('is_active', true)
+    if (error) throw error
+    if (data) allPlayers.value = data
+  } catch (e) {
+    console.error('[TeamsView] loadAllPlayers 失败:', e)
+  }
 }
 
 // ── 展开/收起球队 ──
@@ -600,22 +622,28 @@ async function toggleExpand(team) {
 
 // ── 加载球队成员 ──
 async function loadMembers(teamId) {
-  const { data } = await supabase
-    .from('team_players')
-    .select(`*, players!inner(id, name, position, height, avatar_url)`)
-    .eq('team_id', teamId)
-    .eq('is_active', true)
-    .order('jersey_no')
-  if (data) {
-    members.value = data.map(m => ({
-      player_id: m.player_id,
-      jersey_no: m.jersey_no,
-      player_name: m.players?.name || '',
-      position: m.players?.position || '',
-      height: m.players?.height || null,
-      avatar_url: m.players?.avatar_url || null
-    }))
-  } else {
+  try {
+    const { data, error } = await supabase
+      .from('team_players')
+      .select(`*, players!inner(id, name, position, height, avatar_url)`)
+      .eq('team_id', teamId)
+      .eq('is_active', true)
+      .order('jersey_no')
+    if (error) throw error
+    if (data) {
+      members.value = data.map(m => ({
+        player_id: m.player_id,
+        jersey_no: m.jersey_no,
+        player_name: m.players?.name || '',
+        position: m.players?.position || '',
+        height: m.players?.height || null,
+        avatar_url: m.players?.avatar_url || null
+      }))
+    } else {
+      members.value = []
+    }
+  } catch (e) {
+    console.error('[TeamsView] loadMembers 失败:', e)
     members.value = []
   }
 }
