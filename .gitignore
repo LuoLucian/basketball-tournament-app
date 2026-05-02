@@ -3,3 +3,6 @@ dist/
 .env.local
 .env
 *.local
+WORK_RECORD.md
+nul
+site.zip
