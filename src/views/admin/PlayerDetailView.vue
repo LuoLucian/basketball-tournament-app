@@ -83,8 +83,8 @@
         </div>
 
         <!-- 雷达图（始终显示） -->
-        <div class="flex justify-center">
-          <svg :viewBox="`0 0 ${chartSize} ${chartSize}`" class="w-full max-w-sm" style="filter: drop-shadow(0 0 20px rgba(59,130,246,0.15))">
+        <div class="flex justify-center py-1" style="height: 220px">
+          <svg :viewBox="`0 0 ${chartSize} ${chartSize}`" :width="chartSize" :height="chartSize" style="filter: drop-shadow(0 0 12px rgba(59,130,246,0.12))">
             <defs>
               <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stop-color="rgba(59,130,246,0.08)" />
@@ -139,8 +139,8 @@
 
             <!-- 数据点 -->
             <g v-for="(pt, i) in dataPointCoords" :key="'dot-' + i">
-              <circle :cx="pt.x" :cy="pt.y" r="6" :fill="hasStats ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)'" />
-              <circle :cx="pt.x" :cy="pt.y" r="3.5"
+              <circle :cx="pt.x" :cy="pt.y" r="5" :fill="hasStats ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.08)'" />
+              <circle :cx="pt.x" :cy="pt.y" r="3"
                 :fill="hasStats ? '#3b82f6' : 'rgba(59,130,246,0.3)'"
                 :stroke="hasStats ? '#fff' : 'rgba(59,130,246,0.4)'"
                 stroke-width="1.5"
@@ -148,30 +148,23 @@
                 :style="{ animationDelay: `${i * 0.1}s` }" />
             </g>
 
-            <!-- 标签 -->
+            <!-- 标签（分数括号在后面） -->
             <g v-for="(label, i) in radarLabels" :key="'label-' + i">
               <text
                 :x="labelPosition(i).x"
                 :y="labelPosition(i).y"
-                text-anchor="middle"
+                :text-anchor="labelPosition(i).anchor || 'middle'"
                 :dominant-baseline="labelPosition(i).baseline"
-                class="text-xs font-medium"
+                class="text-[10px] font-medium"
                 :fill="hasStats ? '#e5e7eb' : '#6b7280'"
-              >{{ label }}</text>
-              <text
-                :x="labelPosition(i).x"
-                :y="labelPosition(i).y + 14"
-                text-anchor="middle"
-                class="text-xs font-bold"
-                :fill="hasStats ? '#3b82f6' : '#374151'"
-              >{{ radarValues[i] }}</text>
+              >{{ label }}<tspan font-weight="700" :fill="hasStats ? '#3b82f6' : '#374151'">({{ radarValues[i] }})</tspan></text>
             </g>
 
             <!-- 无数据时的中心提示 -->
             <text v-if="!hasStats"
               :x="center" :y="center + 4"
               text-anchor="middle"
-              class="text-xs"
+              class="text-[10px]"
               fill="rgba(107,114,128,0.6)"
             >暂无数据</text>
           </svg>
@@ -284,9 +277,9 @@ const showDeleteConfirm = ref(false)
 const deleting = ref(false)
 
 // 雷达图配置
-const chartSize = 320
+const chartSize = 200
 const center = chartSize / 2
-const radius = 110
+const radius = 60
 const radarLabels = ['得分', '篮板', '助攻', '抢断', '盖帽', '三分']
 const radarKeys = ['pts', 'reb', 'ast', 'stl', 'blk', 'fg3m']
 
@@ -357,14 +350,19 @@ const dataPointCoords = computed(() => {
 })
 
 function labelPosition(i) {
-  const r = radius + 28
   const a = angleForIndex(i)
-  const x = center + r * Math.cos(a)
-  const y = center + r * Math.sin(a)
+  const r = radius + 16
+  let x = center + r * Math.cos(a)
+  let y = center + r * Math.sin(a)
   let baseline = 'middle'
-  if (i === 0) baseline = 'auto'
-  else if (i === 3) baseline = 'hanging'
-  return { x, y, baseline }
+  let anchor = 'middle'
+  if (i === 0) { baseline = 'auto' }                          // 得分：顶部
+  else if (i === 1) { anchor = 'start' }                      // 篮板：右上
+  else if (i === 2) { anchor = 'start' }                      // 助攻：右
+  else if (i === 3) { anchor = 'end'; baseline = 'hanging' } // 抢断：左下，左对齐+置顶
+  else if (i === 4) { y += 3 }                               // 盖帽：稍下移
+  else if (i === 5) { anchor = 'start'; y += 1 }             // 三分：右移+稍下移
+  return { x, y, baseline, anchor }
 }
 
 const summaryStats = computed(() => {
