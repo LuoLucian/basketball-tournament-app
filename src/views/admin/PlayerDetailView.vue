@@ -83,8 +83,8 @@
         </div>
 
         <!-- 雷达图（始终显示） -->
-        <div class="flex justify-center py-1" style="height: 220px">
-          <svg :viewBox="`0 0 ${chartSize} ${chartSize}`" :width="chartSize" :height="chartSize" style="filter: drop-shadow(0 0 12px rgba(59,130,246,0.12))">
+        <div class="flex justify-center py-2" style="height: 280px">
+          <svg :viewBox="`0 0 ${chartSize} ${chartSize}`" :width="chartSize" :height="chartSize" style="filter: drop-shadow(0 0 12px rgba(59,130,246,0.12)); overflow: visible;">
             <defs>
               <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stop-color="rgba(59,130,246,0.08)" />
@@ -155,9 +155,11 @@
                 :y="labelPosition(i).y"
                 :text-anchor="labelPosition(i).anchor || 'middle'"
                 :dominant-baseline="labelPosition(i).baseline"
-                class="text-[10px] font-medium"
+                font-size="11"
+                font-family="inherit"
+                font-weight="500"
                 :fill="hasStats ? '#e5e7eb' : '#6b7280'"
-              >{{ label }}<tspan font-weight="700" :fill="hasStats ? '#3b82f6' : '#374151'">({{ radarValues[i] }})</tspan></text>
+              >{{ label }}<tspan font-size="10" font-weight="700" :fill="hasStats ? '#3b82f6' : '#374151'"> ({{ radarValues[i] }})</tspan></text>
             </g>
 
             <!-- 无数据时的中心提示 -->
@@ -277,9 +279,9 @@ const showDeleteConfirm = ref(false)
 const deleting = ref(false)
 
 // 雷达图配置
-const chartSize = 200
+const chartSize = 280
 const center = chartSize / 2
-const radius = 60
+const radius = 85
 const radarLabels = ['得分', '篮板', '助攻', '抢断', '盖帽', '三分']
 const radarKeys = ['pts', 'reb', 'ast', 'stl', 'blk', 'fg3m']
 
@@ -351,17 +353,31 @@ const dataPointCoords = computed(() => {
 
 function labelPosition(i) {
   const a = angleForIndex(i)
-  const r = radius + 16
+  const r = radius + 26  // 标签距轴端距离增大，避免遮挡
   let x = center + r * Math.cos(a)
   let y = center + r * Math.sin(a)
   let baseline = 'middle'
   let anchor = 'middle'
-  if (i === 0) { baseline = 'auto' }                          // 得分：顶部
-  else if (i === 1) { anchor = 'start' }                      // 篮板：右上
-  else if (i === 2) { anchor = 'start' }                      // 助攻：右
-  else if (i === 3) { anchor = 'end'; baseline = 'hanging' } // 抢断：左下，左对齐+置顶
-  else if (i === 4) { y += 3 }                               // 盖帽：稍下移
-  else if (i === 5) { anchor = 'start'; y += 1 }             // 三分：右移+稍下移
+  // 6个顶点：0=顶(得分), 1=右上(篮板), 2=右下(助攻), 3=底(抢断), 4=左下(盖帽), 5=左上(三分)
+  if (i === 0) {
+    baseline = 'auto'       // 得分：顶部，文字在轴端上方
+    anchor = 'middle'
+  } else if (i === 1) {
+    anchor = 'start'        // 篮板：右上，文字靠左起始
+    baseline = 'auto'
+  } else if (i === 2) {
+    anchor = 'start'        // 助攻：右下，文字靠左起始
+    baseline = 'hanging'
+  } else if (i === 3) {
+    baseline = 'hanging'    // 抢断：底部，文字在轴端下方
+    anchor = 'middle'
+  } else if (i === 4) {
+    anchor = 'end'          // 盖帽：左下，文字靠右结束
+    baseline = 'hanging'
+  } else if (i === 5) {
+    anchor = 'end'          // 三分：左上，文字靠右结束
+    baseline = 'auto'
+  }
   return { x, y, baseline, anchor }
 }
 
