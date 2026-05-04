@@ -68,9 +68,10 @@
     <Transition name="slide-up">
       <div v-if="selectedPlayer" class="px-2 py-2 border-t border-b border-dark-700/30 bg-dark-850/80">
         <div class="flex items-center gap-2 mb-2">
-          <div class="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white"
+          <div class="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white overflow-hidden"
                :style="{ backgroundColor: team?.color || '#334155' }">
-            {{ selectedPlayer.name?.charAt(0) }}
+            <img v-if="selectedPlayer.avatar_url" :src="selectedPlayer.avatar_url" class="w-full h-full object-cover" alt="">
+            <span v-else>{{ selectedPlayer.name?.charAt(0) }}</span>
           </div>
           <span class="text-[12px] text-white font-semibold flex-1 truncate">{{ selectedPlayer.name }}</span>
           <button @click="selectedPlayer = null"
@@ -80,6 +81,19 @@
             </svg>
           </button>
         </div>
+
+        <!-- 实时数据面板 -->
+        <div v-if="liveStats" class="grid grid-cols-7 gap-1 mb-2 px-1 py-1.5 rounded-lg bg-dark-800/60">
+          <div v-for="s in liveStatItems" :key="s.key" class="text-center">
+            <p class="text-[9px] text-dark-500 leading-tight">{{ s.label }}</p>
+            <p class="text-[13px] font-bold leading-tight mt-0.5 stat-num"
+               :class="s.highlight ? 'text-primary-400' : 'text-dark-200'"
+               :data-key="s.key">
+              {{ liveStats[s.key] || 0 }}
+            </p>
+          </div>
+        </div>
+
         <!-- 得分行 -->
         <div class="grid grid-cols-3 gap-1.5 mb-1.5">
           <button v-for="btn in scoreButtons" :key="btn.type" @click="record(btn.type)"
@@ -104,6 +118,23 @@
                          hover:text-dark-300 hover:bg-dark-800 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                   :disabled="!canRecord">
             {{ btn.label }}
+          </button>
+        </div>
+
+        <!-- 撤销按钮 + 上一步操作 -->
+        <div v-if="lastUndoAction" class="mt-2 flex items-center justify-between px-1 pt-1.5 border-t border-dark-700/30">
+          <div class="text-left min-w-0">
+            <p class="text-[9px] text-dark-600">上一步操作</p>
+            <p class="text-[11px] text-orange-400 font-medium truncate max-w-[120px]">
+              {{ lastUndoAction.player_name }} {{ actionLabel(lastUndoAction.actionType || lastUndoAction.action_type || '') }}
+            </p>
+          </div>
+          <button @click="emit('undo')"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold text-white
+                         bg-gradient-to-r from-orange-500 to-red-500
+                         active:scale-95 transition-all duration-200 flex-shrink-0">
+            <span class="text-xs">↩</span>
+            <span>撤销</span>
           </button>
         </div>
       </div>
@@ -161,14 +192,17 @@ const props = defineProps({
   teamId: String,
   gameType: String,
   gameStatus: String,
-  readonly: { type: Boolean, default: false }
+  readonly: { type: Boolean, default: false },
+  lastUndoAction: { type: Object, default: null }
 })
 
-const emit = defineEmits(['record', 'lineupChange'])
+const emit = defineEmits(['record', 'lineupChange', 'undo'])
 
 const courtPlayers = ref([])
 const benchPlayers = ref([])
 const selectedPlayer = ref(null)
+const liveStats = ref(null)
+const prevStats = ref(null)
 const allTeamMembers = ref([])
 const membersLoaded = ref(false)
 
@@ -211,7 +245,7 @@ async function loadData() {
   if (!membersLoaded.value) {
     const { data: teamPlayerData } = await supabase
       .from('team_players')
-      .select('player_id, jersey_no, players!inner(id, name, position, avatar_url)')
+      .select('player_id, jersey_no, position, players!inner(id, name, position, avatar_url)')
       .eq('team_id', props.teamId)
       .eq('is_active', true)
       .order('jersey_no')
@@ -221,7 +255,7 @@ async function loadData() {
         id: m.player_id,
         jersey_no: m.jersey_no,
         name: m.players?.name || '',
-        position: m.players?.position || '',
+        position: m.position || m.players?.position || '',
         avatar_url: m.players?.avatar_url || null
       }))
     }
@@ -248,14 +282,80 @@ onMounted(() => {
 
 function selectPlayer(player) {
   selectedPlayer.value = selectedPlayer.value?.id === player.id ? null : player
+  if (selectedPlayer.value) {
+    prevStats.value = null
+    loadPlayerStats()
+  } else {
+    liveStats.value = null
+    prevStats.value = null
+  }
 }
+
+async function loadPlayerStats() {
+  if (!selectedPlayer.value || !props.gameId) return
+  try {
+    const { data } = await supabase
+      .from('game_stats')
+      .select('pts, reb, ast, stl, blk, tov, pf, fgm, fga, fg3m, fg3a, ftm, fta, min_played')
+      .eq('game_id', props.gameId)
+      .eq('player_id', selectedPlayer.value.id)
+      .maybeSingle()
+    liveStats.value = data || {}
+  } catch {
+    liveStats.value = {}
+  }
+}
+
+// 每次录入后刷新选中球员的数据（由父组件调用）
+async function refreshStats() {
+  if (selectedPlayer.value) {
+    await loadPlayerStats()
+    triggerStatAnimation()
+  }
+}
+
+// 检测数值变化，仅高亮变化的项
+function triggerStatAnimation() {
+  if (!prevStats.value || !liveStats.value) {
+    prevStats.value = liveStats.value ? { ...liveStats.value } : null
+    return
+  }
+  const changedKeys = liveStatItems
+    .filter(s => (liveStats.value[s.key] || 0) !== (prevStats.value[s.key] || 0))
+    .map(s => s.key)
+  if (changedKeys.length) {
+    requestAnimationFrame(() => {
+      const els = document.querySelectorAll('.stat-num')
+      els.forEach(el => {
+        const key = el.dataset.key
+        if (changedKeys.includes(key)) {
+          el.classList.remove('flash')
+          void el.offsetWidth
+          el.classList.add('flash')
+        }
+      })
+    })
+  }
+  prevStats.value = { ...liveStats.value }
+}
+
+const liveStatItems = [
+  { key: 'pts', label: '得分', highlight: true },
+  { key: 'reb', label: '篮板' },
+  { key: 'ast', label: '助攻' },
+  { key: 'stl', label: '抢断' },
+  { key: 'blk', label: '盖帽' },
+  { key: 'pf', label: '犯规' },
+  { key: 'tov', label: '失误' }
+]
 
 function record(actionType) {
   if (!selectedPlayer.value || !canRecord.value) return
   emit('record', {
     playerId: selectedPlayer.value.id,
     teamId: props.teamId,
-    actionType
+    actionType,
+    playerName: selectedPlayer.value.name
   })
 }
 
@@ -343,6 +443,8 @@ async function removePlayerFromLineup(player) {
   }
 }
 
+defineExpose({ refreshStats })
+
 const scoreButtons = [
   { type: 'pts_1', label: '罚球 +1', cls: 'bg-yellow-600/80' },
   { type: 'pts_2', label: '两分 +2', cls: 'bg-blue-600/80' },
@@ -355,9 +457,7 @@ const statButtons = [
   { type: 'stl', label: '抢断+1' },
   { type: 'blk', label: '盖帽+1' },
   { type: 'tov', label: '失误+1' },
-  { type: 'pf',  label: '犯规+1' },
-  { type: 'oreb', label: '进攻篮板+1' },
-  { type: 'dreb', label: '防守篮板+1' }
+  { type: 'pf',  label: '犯规+1' }
 ]
 
 const missButtons = [
@@ -365,9 +465,30 @@ const missButtons = [
   { type: 'fg3a_miss', label: '三分不中' },
   { type: 'fta_miss',  label: '罚球不中' }
 ]
+
+function actionLabel(type) {
+  const map = {
+    pts_1: '+1分', pts_2: '+2分', pts_3: '+3分',
+    reb: '篮板+1', ast: '助攻+1', stl: '抢断+1', blk: '盖帽+1',
+    tov: '失误+1', pf: '犯规+1', fga_miss: '两分不中', fg3a_miss: '三分不中', fta_miss: '罚球不中'
+  }
+  return map[type] || '已录入'
+}
 </script>
 
 <style scoped>
 .slide-up-enter-active, .slide-up-leave-active { transition: all 0.15s ease; }
 .slide-up-enter-from, .slide-up-leave-to { opacity: 0; transform: translateY(4px); }
+
+/* 数值变化闪烁动画（简洁） */
+.stat-num {
+  transition: color 0.2s ease;
+}
+.stat-num.flash {
+  animation: statFlash 0.3s ease;
+}
+@keyframes statFlash {
+  0% { color: #f97316; }
+  100% { color: inherit; }
+}
 </style>

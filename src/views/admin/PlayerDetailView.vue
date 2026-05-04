@@ -29,42 +29,40 @@
             <span v-else>{{ getInitials(player.name) }}</span>
           </div>
           <div class="flex-1 min-w-0">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <h1 class="text-xl sm:text-2xl font-black text-white truncate text-gradient-accent">{{ player.name }}</h1>
-                <div v-if="player.position" class="flex flex-wrap gap-1 mt-1">
-                  <span v-for="pos in player.position.split(',')" :key="pos"
-                    class="text-xs px-2 py-0.5 rounded-full bg-primary-600/20 text-primary-300 border border-primary-500/20">
-                    {{ POSITION_LABELS[pos] || pos }}
-                  </span>
-                </div>
-                <p v-else class="text-dark-500 text-sm mt-1">位置未指定</p>
-                <div class="flex flex-wrap gap-3 mt-2 text-sm text-dark-300">
-                  <span v-if="player.height">{{ player.height }}cm</span>
-                  <span v-if="player.height && player.weight" class="text-dark-600">·</span>
-                  <span v-if="player.weight">{{ player.weight }}kg</span>
-                </div>
+            <div class="min-w-0">
+              <h1 class="text-xl sm:text-2xl font-black text-white truncate text-gradient-accent">{{ player.name }}</h1>
+              <div v-if="player.position" class="flex flex-wrap gap-1 mt-1">
+                <span v-for="pos in player.position.split(',')" :key="pos"
+                  class="text-xs px-2 py-0.5 rounded-full bg-primary-600/20 text-primary-300 border border-primary-500/20">
+                  {{ POSITION_LABELS[pos] || pos }}
+                </span>
               </div>
-              <!-- 管理员操作 -->
-              <div v-if="auth.isAdmin" class="flex gap-2 mt-3 sm:mt-0 sm:flex-shrink-0">
-                <button @click="goEdit"
-                  class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
-                         bg-dark-800 border-dark-700 text-dark-400 hover:text-primary-400 hover:border-primary-500/30">
-                  编辑
-                </button>
-                <button @click="showDeleteConfirm = true"
-                  class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
-                         bg-dark-800 border-dark-700 text-dark-400 hover:text-danger hover:border-danger/30">
-                  删除
-                </button>
-                <button v-if="auth.isSuperAdmin" @click="showResetConfirm = true"
-                  class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
-                         bg-dark-800 border-dark-700 text-dark-400 hover:text-danger hover:border-danger/30">
-                  重置数据
-                </button>
+              <p v-else class="text-dark-500 text-sm mt-1">位置未指定</p>
+              <div class="flex flex-wrap gap-3 mt-2 text-sm text-dark-300">
+                <span v-if="player.height">{{ player.height }}cm</span>
+                <span v-if="player.height && player.weight" class="text-dark-600">·</span>
+                <span v-if="player.weight">{{ player.weight }}kg</span>
               </div>
             </div>
           </div>
+        </div>
+        <!-- 管理员操作按钮（独立行，横向排布） -->
+        <div v-if="auth.isAdmin" class="relative z-10 flex gap-2 mt-4 pt-3 border-t border-primary-600/10">
+          <button @click="goEdit"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
+                   bg-dark-800 border-dark-700 text-dark-400 hover:text-primary-400 hover:border-primary-500/30">
+            编辑
+          </button>
+          <button @click="showDeleteConfirm = true"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
+                   bg-dark-800 border-dark-700 text-dark-400 hover:text-danger hover:border-danger/30">
+            删除
+          </button>
+          <button v-if="auth.isSuperAdmin" @click="showResetConfirm = true"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
+                   bg-dark-800 border-dark-700 text-dark-400 hover:text-danger hover:border-danger/30">
+            重置数据
+          </button>
         </div>
       </div>
 
@@ -297,10 +295,12 @@ const activeGameType = ref('entertainment')
 
 // 返回逻辑：从球队页过来返回球队，否则返回球员名册
 const backLabel = computed(() => route.query.from === 'teams' ? '返回球队' : '返回球员名册')
+const fromTeamId = computed(() => route.query.teamId || '')
 
 function goBack() {
   if (route.query.from === 'teams') {
-    router.push('/teams')
+    // 带回 teamId 参数，让球队页自动展开
+    router.push({ path: '/teams', query: fromTeamId.value ? { expand: fromTeamId.value } : {} })
   } else {
     router.push('/players')
   }
@@ -467,10 +467,12 @@ async function confirmDelete() {
 async function confirmReset() {
   resetting.value = true
   try {
-    const { error } = await supabase.rpc('admin_reset_player_stats', {
-      p_player_id: playerId
+    const { data, error } = await supabase.rpc('admin_reset_player_stats', {
+      p_player_id: playerId,
+      p_user_id: auth.user?.id || null
     })
     if (error) throw error
+    if (data?.success === false) throw new Error(data.error || '重置失败')
     showResetConfirm.value = false
     // 重新加载数据
     const { data: sData } = await supabase

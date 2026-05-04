@@ -75,15 +75,6 @@
 
       <!-- 操控按钮区 -->
       <div class="px-3 py-2 flex items-center gap-2 border-b border-dark-700/30 bg-dark-850/50">
-        <!-- 撤销 -->
-        <button @click="undoAction" :disabled="gameStore.actionStack.length === 0"
-          class="px-3 py-1 rounded-md text-[11px] font-medium transition-all active:scale-95 border"
-          :class="gameStore.actionStack.length === 0
-            ? 'bg-dark-800 text-dark-700 border-dark-700/50'
-            : 'bg-dark-800 text-dark-300 border-dark-600 hover:text-white'">
-          撤销
-        </button>
-
         <!-- 开始 -->
         <button v-if="gameStore.currentGame.status === 'pending'" @click="startGame" :disabled="starting || !canManageGame"
           class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
@@ -101,11 +92,11 @@
         <div class="flex-1"></div>
 
         <!-- 状态 -->
-        <div v-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[10px]">
+        <div v-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[10px] flex-shrink-0">
           <span class="w-1 h-1 rounded-full bg-green-400 animate-pulse"></span>
           LIVE
         </div>
-        <div v-if="gameStore.currentGame.status === 'finished'" class="text-primary-400 text-[10px]">
+        <div v-if="gameStore.currentGame.status === 'finished'" class="text-primary-400 text-[10px] flex-shrink-0">
           已结束
         </div>
       </div>
@@ -114,6 +105,7 @@
       <div class="flex gap-0 overflow-x-auto pb-4" style="min-height: calc(100vh - 280px)">
         <!-- 主队面板 -->
         <TeamPanel
+          ref="homePanelRef"
           :team="gameStore.currentGame.home_team"
           :lineup="gameStore.homeLineup"
           :game-id="gameId"
@@ -121,8 +113,10 @@
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
           :readonly="!canRecord"
+          :last-undo-action="lastUndoAction"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
+          @undo="undoAction"
           class="flex-1 min-w-0"
         />
 
@@ -131,6 +125,7 @@
 
         <!-- 客队面板 -->
         <TeamPanel
+          ref="awayPanelRef"
           :team="gameStore.currentGame.away_team"
           :lineup="gameStore.awayLineup"
           :game-id="gameId"
@@ -138,8 +133,10 @@
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
           :readonly="!canRecord"
+          :last-undo-action="lastUndoAction"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
+          @undo="undoAction"
           class="flex-1 min-w-0"
         />
       </div>
@@ -183,6 +180,10 @@ const loading = ref(true)
 const toastMsg = ref('')
 const starting = ref(false)
 const ending = ref(false)
+let toastTimer
+
+const homePanelRef = ref(null)
+const awayPanelRef = ref(null)
 
 // ── 权限逻辑 ──
 const isTeamAdmin = computed(() => {
@@ -234,21 +235,15 @@ onUnmounted(() => {
   gameStore.unsubscribeRealtime()
 })
 
-async function handleRecord({ playerId, teamId, actionType }) {
+async function handleRecord({ playerId, teamId, actionType, playerName }) {
   try {
-    await gameStore.recordAction(playerId, teamId, actionType)
+    await gameStore.recordAction(playerId, teamId, actionType, 1, playerName)
     showToast(actionLabel(actionType))
+    // 刷新两个面板的实时数据
+    homePanelRef.value?.refreshStats()
+    awayPanelRef.value?.refreshStats()
   } catch (e) {
     showToast('❌ ' + (e.message || '录入失败'))
-  }
-}
-
-async function undoAction() {
-  try {
-    await gameStore.undoLastAction()
-    showToast('↩ 已撤销')
-  } catch (e) {
-    showToast('❌ 撤销失败')
   }
 }
 
@@ -316,33 +311,55 @@ async function calcMvp() {
   // 只从胜方选 MVP（平局则全员参选）
   const candidates = winnerTeamId ? stats.filter(s => s.team_id === winnerTeamId) : stats
   const scored = candidates.map(s => ({
-    ...s,
+    player_id: s.player_id,
     mvp_score: s.pts * 1.2 + s.reb * 1.1 + s.ast * 1.5 + s.stl * 2 + s.blk * 2 - s.tov * 1.5 - s.pf * 0.8
   }))
   if (!scored.length) return
   const winner = scored.reduce((a, b) => a.mvp_score > b.mvp_score ? a : b)
-  await supabase.from('game_mvp').upsert(scored.map(s => ({
-    game_id: gameId, player_id: s.player_id,
-    mvp_score: s.mvp_score.toFixed(2),
-    is_winner: s.player_id === winner.player_id
-  })))
+  // 通过 RPC 写入（SECURITY DEFINER 绕过 RLS）
+  const { error } = await supabase.rpc('upsert_game_mvp', {
+    p_game_id: gameId,
+    p_players: scored.map(s => ({
+      player_id: s.player_id,
+      mvp_score: Number(s.mvp_score.toFixed(2))
+    })),
+    p_winner_id: winner.player_id
+  })
+  if (error) console.error('[calcMvp] RPC 写入失败:', error)
 }
 
-let toastTimer
+const lastUndoAction = computed(() => {
+  if (!gameStore.actionStack || gameStore.actionStack.length === 0) return null
+  return gameStore.actionStack[gameStore.actionStack.length - 1]
+})
+
 function showToast(msg) {
   toastMsg.value = msg
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => { toastMsg.value = '' }, 1500)
 }
 
+async function undoAction() {
+  const action = lastUndoAction.value
+  try {
+    await gameStore.undoLastAction()
+    const desc = action ? `↩ 已撤销：${action.player_name || ''} ${actionLabel(action.actionType || action.action_type || '')}` : '↩ 已撤销'
+    showToast(desc)
+    // 刷新两个面板的实时数据
+    homePanelRef.value?.refreshStats()
+    awayPanelRef.value?.refreshStats()
+  } catch (e) {
+    showToast('❌ 撤销失败')
+  }
+}
+
 function actionLabel(type) {
   const map = {
-    pts_1: '✅ +1分', pts_2: '✅ +2分', pts_3: '✅ +3分',
-    reb: '✅ 篮板', oreb: '✅ 进攻篮板', dreb: '✅ 防守篮板',
-    ast: '✅ 助攻', stl: '✅ 抢断', blk: '✅ 盖帽',
-    tov: '✅ 失误', pf: '✅ 犯规', fga_miss: '✅ 投篮不中', fg3a_miss: '✅ 三分不中'
+    pts_1: '+1分', pts_2: '+2分', pts_3: '+3分',
+    reb: '篮板+1', ast: '助攻+1', stl: '抢断+1', blk: '盖帽+1',
+    tov: '失误+1', pf: '犯规+1', fga_miss: '两分不中', fg3a_miss: '三分不中', fta_miss: '罚球不中'
   }
-  return map[type] || '✅ 已录入'
+  return map[type] || '已录入'
 }
 </script>
 

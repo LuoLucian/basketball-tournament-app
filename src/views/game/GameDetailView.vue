@@ -1,8 +1,8 @@
 <template>
   <div class="page-container">
-    <!-- 返回 -->
+    <!-- 返回 + 标题 -->
     <div class="flex items-center gap-3 mb-5">
-      <router-link to="/games" class="text-dark-500 hover:text-white transition-colors p-1">
+      <router-link to="/games" class="text-dark-500 hover:text-white transition-colors p-1 flex-shrink-0">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
@@ -11,6 +11,9 @@
         <h1 class="text-lg font-bold text-white truncate">{{ game?.title || '赛事详情' }}</h1>
         <p v-if="game?.scheduled_at" class="text-xs text-dark-500 mt-0.5">{{ fmtDateTime(game.scheduled_at) }}{{ game?.venue ? ' · ' + game.venue : '' }}</p>
       </div>
+    </div>
+    <!-- 操作按钮（独立行，避免与标题重叠） -->
+    <div v-if="canRecord || auth.isSuperAdmin" class="flex gap-2 mb-5">
       <router-link v-if="canRecord" :to="`/games/${gameId}/record`"
         class="btn-accent btn-sm flex items-center gap-1.5">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,43 +165,72 @@
            MVP 展示（比赛结束后）
            ════════════════════════════════════════ -->
       <div v-if="mvpWinner && game.status === 'finished'"
-        class="mvp-banner relative rounded-2xl p-5 mb-5 overflow-hidden">
+        class="mvp-banner relative rounded-2xl p-6 mb-6 overflow-hidden animate-mvp-entrance">
         <!-- 多层光效背景 -->
-        <div class="absolute inset-0 bg-gradient-to-r from-yellow-900/30 via-orange-900/20 to-dark-850"></div>
-        <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_left,rgba(234,179,8,0.15),transparent_60%)]"></div>
+        <div class="absolute inset-0 bg-gradient-to-r from-yellow-900/40 via-orange-900/30 to-dark-850"></div>
+        <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(234,179,8,0.2),transparent_70%)]"></div>
+        <!-- 旋转光环 -->
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div class="mvp-ring-1 absolute w-32 h-32 rounded-full border border-yellow-400/20"></div>
+          <div class="mvp-ring-2 absolute w-40 h-40 rounded-full border border-orange-400/15"></div>
+          <div class="mvp-ring-3 absolute w-48 h-48 rounded-full border border-yellow-300/10"></div>
+        </div>
         <!-- 顶部金色边框 -->
-        <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-yellow-500 via-orange-400 to-transparent rounded-t-2xl"></div>
-        <!-- 漂浮粒子 -->
-        <div class="absolute top-2 right-6 w-1.5 h-1.5 rounded-full bg-yellow-400/60 mvp-particle-1"></div>
-        <div class="absolute top-5 right-12 w-1 h-1 rounded-full bg-orange-400/40 mvp-particle-2"></div>
-        <div class="absolute bottom-3 right-8 w-1 h-1 rounded-full bg-yellow-300/50 mvp-particle-3"></div>
+        <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-yellow-500 via-orange-400 to-yellow-500 rounded-t-2xl"></div>
+        <!-- 底部金色边框 -->
+        <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-yellow-500/50 to-transparent"></div>
+        <!-- 漂浮粒子（更多） -->
+        <div class="absolute top-3 right-8 w-2 h-2 rounded-full bg-yellow-400/60 mvp-particle-1"></div>
+        <div class="absolute top-6 right-16 w-1.5 h-1.5 rounded-full bg-orange-400/50 mvp-particle-2"></div>
+        <div class="absolute bottom-4 right-10 w-1 h-1 rounded-full bg-yellow-300/60 mvp-particle-3"></div>
+        <div class="absolute top-8 left-12 w-1.5 h-1.5 rounded-full bg-yellow-500/40 mvp-particle-4"></div>
+        <div class="absolute bottom-6 left-20 w-1 h-1 rounded-full bg-orange-300/50 mvp-particle-5"></div>
+        <!-- 闪光效果 -->
+        <div class="absolute top-0 left-1/4 w-px h-full bg-gradient-to-b from-yellow-400/30 via-transparent to-transparent mvp-flash"></div>
+        <div class="absolute top-0 right-1/3 w-px h-full bg-gradient-to-b from-orange-400/20 via-transparent to-transparent mvp-flash-reverse"></div>
 
-        <div class="relative z-10 flex items-center gap-4">
-          <!-- 奖杯 -->
+        <div class="relative z-10 flex items-center gap-5">
+          <!-- 奖杯（放大+光晕） -->
           <div class="relative flex-shrink-0">
-            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-yellow-400 to-orange-500
-                        flex items-center justify-center text-3xl shadow-neon-orange">
+            <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-yellow-400 via-orange-500 to-yellow-600
+                        flex items-center justify-center text-4xl shadow-neon-orange
+                        animate-mvp-trophy">
               🏆
             </div>
-            <div class="absolute -inset-1 rounded-2xl bg-gradient-to-br from-yellow-400/20 to-orange-500/20 blur-md -z-10"></div>
+            <!-- 多层光晕 -->
+            <div class="absolute -inset-2 rounded-2xl bg-gradient-to-br from-yellow-400/30 to-orange-500/30 blur-xl -z-10 animate-mvp-glow"></div>
+            <div class="absolute -inset-4 rounded-3xl bg-gradient-to-br from-yellow-400/15 to-orange-500/15 blur-2xl -z-20 animate-pulse"></div>
           </div>
-          <!-- 信息 -->
+          <!-- 信息（放大） -->
           <div class="flex-1 min-w-0">
-            <p class="text-xs text-yellow-500/80 font-bold uppercase tracking-widest mb-0.5">⭐ 本场 MVP</p>
-            <p class="font-black text-white text-xl leading-tight">{{ mvpWinner.player?.name }}</p>
-            <p class="text-xs text-dark-400 mt-1">
+            <p class="text-xs text-yellow-500/90 font-black uppercase tracking-[0.2em] mb-1">⭐ 本场 MVP</p>
+            <p class="font-black text-white text-2xl leading-tight mb-1 animate-mvp-name">{{ mvpWinner.player?.name }}</p>
+            <p class="text-xs text-dark-400">
               综合评分
-              <span class="text-yellow-400 font-black text-base ml-1">{{ mvpWinner.mvp_score }}</span>
+              <span class="text-yellow-400 font-black text-lg ml-1">{{ mvpWinner.mvp_score }}</span>
             </p>
           </div>
-          <!-- MVP 数据摘要 -->
-          <div v-if="mvpStats" class="hidden sm:flex flex-col gap-1 flex-shrink-0 text-right">
+          <!-- MVP 数据摘要（更详细） -->
+          <div v-if="mvpStats" class="hidden sm:flex flex-col gap-1.5 flex-shrink-0 text-right bg-dark-800/40 rounded-xl p-3 border border-yellow-500/20">
             <div class="text-xs text-dark-500">
-              <span class="text-white font-bold text-base">{{ mvpStats.pts }}</span> 分
+              <span class="text-white font-black text-lg">{{ mvpStats.pts }}</span>
+              <span class="text-yellow-500 ml-0.5">分</span>
             </div>
-            <div class="text-xs text-dark-500">
-              <span class="text-dark-300 font-bold">{{ mvpStats.reb }}</span> 板
-              <span class="text-dark-300 font-bold ml-2">{{ mvpStats.ast }}</span> 助
+            <div class="flex gap-3 text-xs">
+              <span class="text-dark-500">
+                <span class="text-blue-400 font-bold">{{ mvpStats.reb }}</span> 板
+              </span>
+              <span class="text-dark-500">
+                <span class="text-green-400 font-bold">{{ mvpStats.ast }}</span> 助
+              </span>
+            </div>
+            <div v-if="mvpStats.stl || mvpStats.blk" class="flex gap-3 text-[10px]">
+              <span v-if="mvpStats.stl" class="text-dark-600">
+                <span class="text-purple-400 font-bold">{{ mvpStats.stl }}</span> 断
+              </span>
+              <span v-if="mvpStats.blk" class="text-dark-600">
+                <span class="text-pink-400 font-bold">{{ mvpStats.blk }}</span> 帽
+              </span>
             </div>
           </div>
         </div>
@@ -231,21 +263,30 @@
           </div>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full" style="table-layout: fixed;">
+        <div style="overflow-x: auto; overflow-y: clip;">
+          <table class="w-full" style="min-width: 620px;">
             <thead>
               <tr class="border-b border-dark-700/50">
-                <th class="text-left px-4 py-2 text-xs font-semibold text-dark-500 whitespace-nowrap">球员</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">#</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">得分</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">篮板</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">助攻</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">抢断</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">盖帽</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">犯规</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">2分%</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">3分%</th>
-                <th class="px-2 py-2 text-center text-xs font-semibold text-dark-500 whitespace-nowrap">失误</th>
+                <th class="sticky-th text-left px-2 py-2.5 text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 90px;">球员</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 44px;">得分</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 44px;">篮板</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 44px;">助攻</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 44px;">抢断</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 44px;">盖帽</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 44px;">犯规</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 60px;">2分%</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 60px;">3分%</th>
+                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                    style="min-width: 44px;">失误</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-dark-700/30">
@@ -255,7 +296,7 @@
                 <!-- 主队标题行（仅全队模式显示） -->
                 <tr v-if="teamFilter === 'all' && getTeamStats('home').length"
                   class="bg-dark-800/50">
-                  <td colspan="11" class="px-4 py-1.5">
+                  <td colspan="10" class="px-3 py-1.5">
                     <div class="flex items-center gap-2">
                       <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: homeColor }"></div>
                       <span class="text-[11px] font-bold" :style="{ color: homeColor }">{{ game.home_team?.name }}</span>
@@ -266,66 +307,96 @@
                 <!-- 主队球员行 -->
                 <tr v-for="stat in getTeamStats('home')" :key="stat.player_id"
                   class="hover:bg-dark-800/40 transition-colors text-xs">
-                  <td class="px-4 py-2">
-                    <div class="flex items-center gap-2">
-                      <span v-if="isMvpRow(stat)" class="text-sm leading-none flex-shrink-0" title="本场MVP">👑</span>
-                      <div class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                        :style="{ backgroundColor: homeColor + '33', color: homeColor }">
-                        {{ getInitials(stat.player?.name) }}
+                  <!-- 球员信息（固定列） -->
+                  <td class="sticky-player-info px-2 py-1.5">
+                    <div class="flex items-center gap-1.5">
+                      <span v-if="isMvpRow(stat)" class="text-xs leading-none flex-shrink-0" title="本场MVP">👑</span>
+                      <div class="w-6 h-6 rounded-full flex-shrink-0 overflow-hidden border border-dark-700/50">
+                        <img v-if="stat.player_avatar_url || stat.player?.avatar_url"
+                             :src="stat.player_avatar_url || stat.player?.avatar_url"
+                             class="w-full h-full object-cover" alt="" />
+                        <div v-else class="w-full h-full rounded-full flex items-center justify-center text-[8px] font-bold"
+                             :style="{ backgroundColor: homeColor + '33', color: homeColor }">
+                          {{ getInitials(stat.player_name || stat.player?.name) }}
+                        </div>
                       </div>
-                      <span class="font-medium whitespace-nowrap"
-                        :class="isMvpRow(stat) ? 'text-yellow-200' : 'text-white'">
-                        {{ stat.player?.name }}
-                      </span>
+                      <div class="min-w-0">
+                        <span class="font-medium text-xs whitespace-nowrap truncate block leading-tight"
+                          :class="isMvpRow(stat) ? 'text-yellow-200' : 'text-white'">
+                          {{ stat.player_name || stat.player?.name }}
+                        </span>
+                        <div class="flex items-center gap-1 leading-tight">
+                          <span v-if="stat.jersey_no || stat.player?.jersey_no"
+                                class="text-[9px] font-bold" :style="{ color: homeColor }">
+                            #{{ stat.jersey_no || stat.player?.jersey_no }}
+                          </span>
+                          <span v-if="stat.player?.team_position"
+                                class="text-[8px] text-dark-500 bg-dark-700/40 px-0.5 rounded">
+                            {{ stat.player?.team_position }}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </td>
-                  <td class="px-2 py-2 text-center font-bold" :style="{ color: homeColor }">
-                    {{ stat.player?.jersey_no || '-' }}
-                  </td>
+                  <!-- 得分 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('pts', stat, 'home') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].pts" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.pts }}</span>
                   </td>
+                  <!-- 篮板 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('reb', stat, 'home') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].reb" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.reb }}</span>
                   </td>
+                  <!-- 助攻 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('ast', stat, 'home') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].ast" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.ast }}</span>
                   </td>
+                  <!-- 抢断 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('stl', stat, 'home') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].stl" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.stl }}</span>
                   </td>
+                  <!-- 盖帽 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('blk', stat, 'home') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].blk" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.blk }}</span>
                   </td>
+                  <!-- 犯规 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (stat.pf >= 5 ? 'text-danger font-bold' : stat.pf >= 3 ? 'text-warning font-semibold' : 'text-dark-500')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].pf" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.pf }}</span>
                   </td>
+                  <!-- 2分命中率 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="命中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="不中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <template v-if="editMode">
+                      <input v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="中"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                      <span class="text-dark-600">/</span>
+                      <input v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="投"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                    </template>
                     <span v-else>{{ fgPct(stat) }}</span>
                   </td>
+                  <!-- 3分命中率 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg3_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3m" type="number" min="0" placeholder="命中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3a" type="number" min="0" placeholder="不中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <template v-if="editMode">
+                      <input v-model.number="editData[stat.player_id].fg3m" type="number" min="0" placeholder="中"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                      <span class="text-dark-600">/</span>
+                      <input v-model.number="editData[stat.player_id].fg3a" type="number" min="0" placeholder="投"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                    </template>
                     <span v-else>{{ fg3Pct(stat) }}</span>
                   </td>
+                  <!-- 失误 -->
                   <td class="px-2 py-2 text-center text-dark-500">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].tov" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
@@ -339,7 +410,7 @@
                 <!-- 客队标题行（仅全队模式显示） -->
                 <tr v-if="teamFilter === 'all' && getTeamStats('away').length"
                   class="bg-dark-800/50">
-                  <td colspan="11" class="px-4 py-1.5">
+                  <td colspan="10" class="px-3 py-1.5">
                     <div class="flex items-center gap-2">
                       <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: awayColor }"></div>
                       <span class="text-[11px] font-bold" :style="{ color: awayColor }">{{ game.away_team?.name }}</span>
@@ -350,66 +421,96 @@
                 <!-- 客队球员行 -->
                 <tr v-for="stat in getTeamStats('away')" :key="stat.player_id"
                   class="hover:bg-dark-800/40 transition-colors text-xs">
-                  <td class="px-4 py-2">
-                    <div class="flex items-center gap-2">
-                      <span v-if="isMvpRow(stat)" class="text-sm leading-none flex-shrink-0" title="本场MVP">👑</span>
-                      <div class="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                        :style="{ backgroundColor: awayColor + '33', color: awayColor }">
-                        {{ getInitials(stat.player?.name) }}
+                  <!-- 球员信息（固定列） -->
+                  <td class="sticky-player-info px-2 py-1.5">
+                    <div class="flex items-center gap-1.5">
+                      <span v-if="isMvpRow(stat)" class="text-xs leading-none flex-shrink-0" title="本场MVP">👑</span>
+                      <div class="w-6 h-6 rounded-full flex-shrink-0 overflow-hidden border border-dark-700/50">
+                        <img v-if="stat.player_avatar_url || stat.player?.avatar_url"
+                             :src="stat.player_avatar_url || stat.player?.avatar_url"
+                             class="w-full h-full object-cover" alt="" />
+                        <div v-else class="w-full h-full rounded-full flex items-center justify-center text-[8px] font-bold"
+                             :style="{ backgroundColor: awayColor + '33', color: awayColor }">
+                          {{ getInitials(stat.player_name || stat.player?.name) }}
+                        </div>
                       </div>
-                      <span class="font-medium whitespace-nowrap"
-                        :class="isMvpRow(stat) ? 'text-yellow-200' : 'text-white'">
-                        {{ stat.player?.name }}
-                      </span>
+                      <div class="min-w-0">
+                        <span class="font-medium text-xs whitespace-nowrap truncate block leading-tight"
+                          :class="isMvpRow(stat) ? 'text-yellow-200' : 'text-white'">
+                          {{ stat.player_name || stat.player?.name }}
+                        </span>
+                        <div class="flex items-center gap-1 leading-tight">
+                          <span v-if="stat.jersey_no || stat.player?.jersey_no"
+                                class="text-[9px] font-bold" :style="{ color: awayColor }">
+                            #{{ stat.jersey_no || stat.player?.jersey_no }}
+                          </span>
+                          <span v-if="stat.player?.team_position"
+                                class="text-[8px] text-dark-500 bg-dark-700/40 px-0.5 rounded">
+                            {{ stat.player?.team_position }}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </td>
-                  <td class="px-2 py-2 text-center font-bold" :style="{ color: awayColor }">
-                    {{ stat.player?.jersey_no || '-' }}
-                  </td>
+                  <!-- 得分 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('pts', stat, 'away') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].pts" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.pts }}</span>
                   </td>
+                  <!-- 篮板 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('reb', stat, 'away') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].reb" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.reb }}</span>
                   </td>
+                  <!-- 助攻 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('ast', stat, 'away') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].ast" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.ast }}</span>
                   </td>
+                  <!-- 抢断 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('stl', stat, 'away') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].stl" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.stl }}</span>
                   </td>
+                  <!-- 盖帽 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('blk', stat, 'away') ? 'top-value' : 'text-dark-400')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].blk" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.blk }}</span>
                   </td>
+                  <!-- 犯规 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (stat.pf >= 5 ? 'text-danger font-bold' : stat.pf >= 3 ? 'text-warning font-semibold' : 'text-dark-500')">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].pf" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
                     <span v-else>{{ stat.pf }}</span>
                   </td>
+                  <!-- 2分命中率 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="命中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="不中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <template v-if="editMode">
+                      <input v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="中"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                      <span class="text-dark-600">/</span>
+                      <input v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="投"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                    </template>
                     <span v-else>{{ fgPct(stat) }}</span>
                   </td>
+                  <!-- 3分命中率 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg3_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3m" type="number" min="0" placeholder="命中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
-                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3a" type="number" min="0" placeholder="不中"
-                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <template v-if="editMode">
+                      <input v-model.number="editData[stat.player_id].fg3m" type="number" min="0" placeholder="中"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                      <span class="text-dark-600">/</span>
+                      <input v-model.number="editData[stat.player_id].fg3a" type="number" min="0" placeholder="投"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                    </template>
                     <span v-else>{{ fg3Pct(stat) }}</span>
                   </td>
+                  <!-- 失误 -->
                   <td class="px-2 py-2 text-center text-dark-500">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].tov" type="number" min="0"
                       class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
@@ -420,13 +521,13 @@
 
               <!-- 空状态 -->
               <tr v-if="teamFilter === 'all' && getTeamStats('home').length === 0 && getTeamStats('away').length === 0">
-                <td colspan="11" class="text-center py-8 text-dark-500 text-xs">暂无数据</td>
+                <td colspan="10" class="text-center py-8 text-dark-500 text-xs">暂无数据</td>
               </tr>
               <tr v-if="teamFilter === 'home' && getTeamStats('home').length === 0">
-                <td colspan="11" class="text-center py-6 text-dark-500 text-xs">暂无主队数据</td>
+                <td colspan="10" class="text-center py-6 text-dark-500 text-xs">暂无主队数据</td>
               </tr>
               <tr v-if="teamFilter === 'away' && getTeamStats('away').length === 0">
-                <td colspan="11" class="text-center py-6 text-dark-500 text-xs">暂无客队数据</td>
+                <td colspan="10" class="text-center py-6 text-dark-500 text-xs">暂无客队数据</td>
               </tr>
             </tbody>
           </table>
@@ -521,12 +622,16 @@ async function saveEdits() {
       for (const f of statEditFields) {
         const newVal = d[f] ?? 0
         if (newVal !== (stat[f] || 0)) {
-          const { error } = await supabase.rpc('admin_set_game_stat', {
-            p_stat_id: stat.id,
+          const { data: result, error } = await supabase.rpc('admin_set_game_stat', {
+            p_game_id: gameId,
+            p_player_id: stat.player_id,
+            p_team_id: stat.team_id,
             p_field: f,
-            p_value: newVal
+            p_new_value: newVal,
+            p_user_id: auth.user?.id || null
           })
           if (error) throw error
+          if (result?.success === false) throw new Error(result.error || '保存失败')
         }
       }
     }
@@ -687,7 +792,7 @@ onMounted(async () => {
     // 并行获取：两队所有球员 + 本场统计数据 + MVP
     const [tpRes, statsRes, mvpQuery] = await Promise.allSettled([
       supabase.from('team_players')
-        .select(`team_id, player_id, jersey_no, player:player_id(id, name)`)
+        .select(`team_id, player_id, jersey_no, position, player:player_id(id, name)`)
         .in('team_id', [gameData.home_team_id, gameData.away_team_id])
         .eq('is_active', true),
       supabase.from('game_stats')
@@ -718,14 +823,16 @@ onMounted(async () => {
       for (const tp of tpRes.value.data) {
         const existing = statsMap[tp.player_id]
         if (existing) {
-          // 有统计数据：合并球衣号码，同时把 NULL 字段默认为 0
+          // 有统计数据：合并球衣号码和位置，同时把 NULL 字段默认为 0
           const normalized = { ...existing }
           for (const f of statFields) {
             if (normalized[f] == null) normalized[f] = 0
           }
           normalized.player = {
             ...existing.player,
-            jersey_no: tp.jersey_no
+            jersey_no: tp.jersey_no,
+            // 优先使用球队位置（tp.position），如果没有则保留快照位置（player_position）
+            team_position: tp.position || normalized.player_position || ''
           }
           // 确保 team_id 正确（可能来自 game_stats，可能为 null）
           normalized.team_id = normalized.team_id || tp.team_id
@@ -739,10 +846,12 @@ onMounted(async () => {
             team_id:   tp.team_id,
             pts: 0, reb: 0, ast: 0, stl: 0, blk: 0,
             pf: 0, tov: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0,
+            player_position: tp.position || '',
             player: {
               id:        tp.player_id,
               name:      tp.player?.name || '未知',
-              jersey_no: tp.jersey_no
+              jersey_no: tp.jersey_no,
+              team_position: tp.position || ''
             },
             team: {
               id:    tp.team_id,
@@ -781,6 +890,107 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* ── MVP 入场动画 ── */
+@keyframes mvpEntrance {
+  0% { transform: scale(0.8) translateY(20px); opacity: 0; }
+  60% { transform: scale(1.02) translateY(-5px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.animate-mvp-entrance {
+  animation: mvpEntrance 0.8s ease-out forwards;
+}
+
+/* ── MVP 奖杯动画 ── */
+@keyframes mvpTrophy {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.1) rotate(-5deg); }
+  75% { transform: scale(1.1) rotate(5deg); }
+}
+.animate-mvp-trophy {
+  animation: mvpTrophy 3s ease-in-out infinite;
+}
+
+/* ── MVP 光晕动画 ── */
+@keyframes mvpGlow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+.animate-mvp-glow {
+  animation: mvpGlow 2s ease-in-out infinite;
+}
+
+/* ── MVP 旋转光环 ── */
+@keyframes mvpRing1 {
+  0% { transform: rotate(0deg); opacity: 0.3; }
+  100% { transform: rotate(360deg); opacity: 0.3; }
+}
+@keyframes mvpRing2 {
+  0% { transform: rotate(180deg); opacity: 0.2; }
+  100% { transform: rotate(540deg); opacity: 0.2; }
+}
+@keyframes mvpRing3 {
+  0% { transform: rotate(0deg); opacity: 0.15; }
+  100% { transform: rotate(-360deg); opacity: 0.15; }
+}
+.mvp-ring-1 {
+  animation: mvpRing1 8s linear infinite;
+}
+.mvp-ring-2 {
+  animation: mvpRing2 12s linear infinite;
+}
+.mvp-ring-3 {
+  animation: mvpRing3 10s linear infinite;
+}
+
+/* ── MVP 粒子动画（增强） ── */
+@keyframes particleFloatEnhanced {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 0.3; }
+  25% { transform: translateY(-15px) translateX(5px) scale(1.5); opacity: 0.8; }
+  50% { transform: translateY(-25px) translateX(-5px) scale(1.2); opacity: 1; }
+  75% { transform: translateY(-15px) translateX(8px) scale(1.4); opacity: 0.7; }
+  100% { transform: translateY(0) translateX(0) scale(1); opacity: 0.3; }
+}
+.mvp-particle-1 {
+  animation: particleFloatEnhanced 3s ease-in-out infinite;
+}
+.mvp-particle-2 {
+  animation: particleFloatEnhanced 2.5s ease-in-out infinite 0.7s;
+}
+.mvp-particle-3 {
+  animation: particleFloatEnhanced 3.5s ease-in-out infinite 1.2s;
+}
+.mvp-particle-4 {
+  animation: particleFloatEnhanced 4s ease-in-out infinite 0.3s;
+}
+.mvp-particle-5 {
+  animation: particleFloatEnhanced 2.8s ease-in-out infinite 1.5s;
+}
+
+/* ── MVP 闪光效果 ── */
+@keyframes mvpFlash {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.3; }
+}
+.mvp-flash {
+  animation: mvpFlash 3s ease-in-out infinite;
+}
+@keyframes mvpFlashReverse {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.2; }
+}
+.mvp-flash-reverse {
+  animation: mvpFlashReverse 4s ease-in-out infinite 1s;
+}
+
+/* ── MVP 姓名动画 ── */
+@keyframes mvpName {
+  0%, 100% { text-shadow: 0 0 10px rgba(250, 204, 21, 0.3); }
+  50% { text-shadow: 0 0 20px rgba(250, 204, 21, 0.6), 0 0 40px rgba(249, 115, 22, 0.3); }
+}
+.animate-mvp-name {
+  animation: mvpName 2s ease-in-out infinite;
+}
+
 /* ── 比分板 ── */
 .vs-arena {
   background: linear-gradient(135deg, #0f1117 0%, #1a1f2e 50%, #0f1117 100%);
@@ -820,6 +1030,25 @@ onMounted(async () => {
   font-weight: 800;
   color: #f97316;
   text-shadow: 0 0 8px rgba(249, 115, 22, 0.5);
+}
+
+/* ── 球员信息固定列 ── */
+.sticky-th,
+.sticky-player-info {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background-color: #1a1d2e;
+}
+.sticky-player-info::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -8px;
+  bottom: -1px;
+  width: 8px;
+  background: linear-gradient(to right, rgba(0,0,0,0.25), transparent);
+  pointer-events: none;
 }
 
 /* ── 动画 ── */

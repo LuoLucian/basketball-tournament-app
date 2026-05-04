@@ -99,8 +99,8 @@ BEGIN
       game_id, player_id, team_id, game_type,
       pts, reb, oreb, dreb, ast, stl, blk, tov, pf,
       fgm, fga, fg3m, fg3a, ftm, fta, min_played,
-      player_name_snapshot, jersey_no_snapshot, player_position_snapshot, player_avatar_url_snapshot,
-      team_name_snapshot, team_color_snapshot
+      player_name, jersey_no, player_position, player_avatar_url,
+      team_name, team_color
     )
     VALUES (
       p_game_id, p_player_id, p_team_id,

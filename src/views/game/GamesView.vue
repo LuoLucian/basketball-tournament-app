@@ -52,7 +52,7 @@
     <div v-else class="space-y-3">
       <div v-for="game in filteredGames" :key="game.id" class="group relative">
         <router-link :to="`/games/${game.id}`"
-          class="card card-body flex items-start justify-between gap-3
+          class="card card-body flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-3
                  hover:border-primary-600/30 hover:shadow-neon-blue transition-all duration-300"
         >
           <div class="flex-1 min-w-0">
@@ -80,10 +80,20 @@
             </div>
             <p v-if="game.scheduled_at" class="text-xs text-dark-500 mt-1.5">{{ fmtDateTime(game.scheduled_at) }}</p>
           </div>
-          <div class="flex flex-col gap-1.5 flex-shrink-0 items-end">
+          <div class="flex gap-1.5 items-center sm:flex-shrink-0 sm:justify-end self-end">
             <router-link v-if="canRecord(game)" :to="`/games/${game.id}/record`"
               class="btn-primary btn-sm" @click.stop
             >录入</router-link>
+            <button v-if="auth.isSuperAdmin"
+              @click.stop="confirmDelete(game)"
+              class="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-dark-500
+                     hover:text-danger hover:bg-danger/10 border border-transparent hover:border-danger/20 transition-all duration-200"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              删除
+            </button>
             <span class="text-dark-600 group-hover:text-primary-400 transition-colors">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -91,17 +101,6 @@
             </span>
           </div>
         </router-link>
-        <!-- 删除按钮独立于 router-link，避免事件冲突 -->
-        <button v-if="auth.isSuperAdmin"
-          @click.stop="confirmDelete(game)"
-          class="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-dark-500
-                 hover:text-danger hover:bg-danger/10 border border-transparent hover:border-danger/20 transition-all duration-200"
-        >
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-          </svg>
-          删除
-        </button>
       </div>
     </div>
   </div>

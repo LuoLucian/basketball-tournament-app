@@ -122,7 +122,7 @@
     </header>
 
     <!-- 主内容区 -->
-    <main class="flex-1 pb-20 md:pb-6">
+    <main class="flex-1">
       <router-view v-slot="{ Component, route }">
         <Transition name="page" mode="out-in">
           <div :key="route.path">

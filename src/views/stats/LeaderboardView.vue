@@ -12,13 +12,24 @@
       </div>
     </div>
 
+    <!-- 排序模式切换：累计 / 场均 -->
+    <div class="flex gap-1 bg-dark-800 p-1 rounded-xl border border-dark-700/50 mb-4 w-fit">
+      <button v-for="m in sortModes" :key="m.value"
+        @click="activeSortMode = m.value"
+        class="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-200"
+        :class="activeSortMode === m.value
+          ? m.value === 'total' ? 'bg-accent-500/20 text-accent-400 shadow-sm' : 'bg-primary-600/20 text-primary-300 shadow-sm'
+          : 'text-dark-500 hover:text-dark-300'"
+      >{{ m.label }}</button>
+    </div>
+
     <!-- 统计类型 Tab -->
     <div class="flex gap-2 overflow-x-auto mb-5 pb-1 scrollbar-none">
-      <button v-for="cat in categories" :key="cat.key"
+      <button v-for="cat in currentCategories" :key="cat.key"
         @click="activeCategory = cat.key"
         class="flex-shrink-0 px-4 py-1.5 rounded-xl text-sm font-semibold transition-all duration-200"
         :class="activeCategory === cat.key
-          ? 'bg-primary-600 text-white shadow-neon-blue'
+          ? activeSortMode === 'total' ? 'bg-accent-500 text-white shadow-neon-orange' : 'bg-primary-600 text-white shadow-neon-blue'
           : 'bg-dark-800 text-dark-400 border border-dark-700 hover:text-white hover:border-dark-600'"
       >{{ cat.label }}</button>
     </div>
@@ -27,7 +38,8 @@
     <div class="card">
       <div class="card-header">
         <h2 class="font-semibold text-white">
-          {{ categories.find(c => c.key === activeCategory)?.label }} 排行
+          {{ currentCategories.find(c => c.key === activeCategory)?.label }}
+          <span class="text-xs font-normal text-dark-500 ml-1">{{ activeSortMode === 'total' ? '累计' : '场均' }}</span>
         </h2>
         <span class="text-xs text-dark-500">{{ activeGameType === 'entertainment' ? '娱乐制' : '正式制' }}</span>
       </div>
@@ -54,13 +66,14 @@
           <router-link :to="`/players/${player.player_id}`"
             class="flex items-center gap-2.5 flex-1 min-w-0"
           >
-            <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 border-2"
+            <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 border-2 overflow-hidden"
               :class="index === 0 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400' :
                       index === 1 ? 'bg-gray-400/20 border-gray-400/40 text-gray-300' :
                       index === 2 ? 'bg-orange-500/20 border-orange-500/40 text-orange-400' :
                       'bg-dark-800 border-dark-600 text-dark-300'"
             >
-              {{ getInitials(player.player_name) }}
+              <img v-if="player.avatar_url" :src="player.avatar_url" class="w-full h-full object-cover" alt="">
+              <span v-else>{{ getInitials(player.player_name) }}</span>
             </div>
             <div class="min-w-0">
               <p class="font-semibold text-white text-sm truncate">{{ player.player_name }}</p>
@@ -71,9 +84,21 @@
           <!-- 数值 -->
           <div class="text-right flex-shrink-0">
             <p class="text-lg font-bold" :class="index === 0 ? 'text-gradient-gold text-glow-orange' : 'text-primary-400'">
-              {{ fmt(player[activeCategory]) }}
+              <template v-if="activeSortMode === 'total'">
+                {{ totalFmt(player[activeCategory]) }}
+              </template>
+              <template v-else-if="activeCategory === 'fg_pct' || activeCategory === 'fg3_pct'">
+                {{ pctFmt(player[activeCategory]) }}
+              </template>
+              <template v-else>
+                {{ avgFmt(player[activeCategory], player.games_played) }}
+              </template>
             </p>
-            <p class="text-xs text-dark-500">均 {{ avgFmt(player[activeCategory], player.games_played) }}</p>
+            <p class="text-xs text-dark-500">
+              <template v-if="activeSortMode === 'total'">累计</template>
+              <template v-else-if="activeCategory === 'fg_pct' || activeCategory === 'fg3_pct'">总命中率</template>
+              <template v-else>场均</template>
+            </p>
           </div>
         </div>
 
@@ -97,6 +122,7 @@ import { supabase } from '@/utils/supabase'
 import { getInitials, calcMvpScore } from '@/utils/helpers'
 
 const activeGameType = ref('entertainment')
+const activeSortMode = ref('total') // 'total' | 'avg'
 const activeCategory = ref('pts')
 const leaderboard = ref([])
 const loading = ref(true)
@@ -106,25 +132,77 @@ const gameTypeOptions = [
   { value: 'official', label: '正式' }
 ]
 
-const categories = [
+const sortModes = [
+  { value: 'total', label: '累计' },
+  { value: 'avg', label: '场均' }
+]
+
+// 累计模式只有5个维度
+const totalCategories = [
+  { key: 'pts', label: '得分' },
+  { key: 'reb', label: '篮板' },
+  { key: 'ast', label: '助攻' },
+  { key: 'stl', label: '抢断' },
+  { key: 'blk', label: '盖帽' }
+]
+
+// 场均模式有全部维度
+const avgCategories = [
   { key: 'pts',  label: '得分' },
   { key: 'reb',  label: '篮板' },
   { key: 'ast',  label: '助攻' },
   { key: 'stl',  label: '抢断' },
   { key: 'blk',  label: '盖帽' },
+  { key: 'fg_pct', label: '二分%' },
+  { key: 'fg3_pct', label: '三分%' },
   { key: 'mvp_score', label: 'MVP分' }
 ]
 
-const sortedLeaderboard = computed(() => {
-  return [...leaderboard.value].sort((a, b) => (b[activeCategory.value] || 0) - (a[activeCategory.value] || 0))
+const currentCategories = computed(() => {
+  return activeSortMode.value === 'total' ? totalCategories : avgCategories
 })
 
-function fmt(val) {
-  return val != null ? Number(val).toFixed(activeCategory.value === 'mvp_score' ? 1 : 0) : '0'
+// 切换模式时，如果当前分类不在新列表中，自动切换到第一个
+watch(activeSortMode, () => {
+  const cats = currentCategories.value
+  if (!cats.find(c => c.key === activeCategory.value)) {
+    activeCategory.value = cats[0].key
+  }
+})
+
+const sortedLeaderboard = computed(() => {
+  return [...leaderboard.value].sort((a, b) => {
+    const cat = activeCategory.value
+    // 命中率按整体百分比排序
+    if (cat === 'fg_pct' || cat === 'fg3_pct') {
+      const aVal = a[cat] ?? -1
+      const bVal = b[cat] ?? -1
+      return bVal - aVal
+    }
+    // 累计模式：按总数据排序
+    if (activeSortMode.value === 'total') {
+      return (b[cat] || 0) - (a[cat] || 0)
+    }
+    // 场均模式：按场均排序
+    const aAvg = a.games_played ? (a[cat] || 0) / a.games_played : -1
+    const bAvg = b.games_played ? (b[cat] || 0) / b.games_played : -1
+    return bAvg - aAvg
+  })
+})
+
+function totalFmt(val) {
+  if (val == null) return '0'
+  return Number(val).toFixed(0)
 }
+
 function avgFmt(val, games) {
   if (!games) return '0'
   return (Number(val || 0) / games).toFixed(1)
+}
+
+function pctFmt(val) {
+  if (val == null) return '-'
+  return Number(val).toFixed(1) + '%'
 }
 
 async function loadLeaderboard() {
@@ -134,7 +212,7 @@ async function loadLeaderboard() {
     .select(`
       player_id,
       team_id,
-      player:player_id(name),
+      player:player_id(name, avatar_url),
       game:game_id(id, home_score, away_score, home_team_id, away_team_id),
       pts, reb, ast, stl, blk, tov, pf,
       fgm, fga, fg3m, fg3a
@@ -150,6 +228,7 @@ async function loadLeaderboard() {
       map[pid] = {
         player_id: pid,
         player_name: row.player?.name || '-',
+        avatar_url: row.player?.avatar_url || null,
         games_played: 0,
         pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
         fgm: 0, fga: 0, fg3m: 0, fg3a: 0
@@ -162,8 +241,13 @@ async function loadLeaderboard() {
     }
   }
 
-  // 计算 MVP 分：只累加赢球场次
-  leaderboard.value = Object.values(map).map(p => {
+    // 计算 MVP 分：只累加赢球场次
+    leaderboard.value = Object.values(map).map(p => {
+      // 计算命中率（至少 5 次出手才纳入排名，出手数 = 命中 + 不中）
+      const totalFG = p.fgm + p.fga
+      const fgPct = totalFG >= 5 ? (p.fgm / totalFG * 100) : null
+      const total3 = p.fg3m + p.fg3a
+      const fg3Pct = total3 >= 5 ? (p.fg3m / total3 * 100) : null
     // 重新遍历计算 MVP 分（只算赢球场次）
     let mvpTotal = 0
     for (const row of data) {
@@ -187,7 +271,7 @@ async function loadLeaderboard() {
       }
       mvpTotal += parseFloat(calcMvpScore(stat))
     }
-    return { ...p, mvp_score: mvpTotal }
+    return { ...p, mvp_score: mvpTotal, fg_pct: fgPct, fg3_pct: fg3Pct }
   })
   loading.value = false
 }

@@ -36,7 +36,7 @@
     </div>
 
     <!-- 排行榜快捷入口 -->
-    <router-link to="/leaderboard"
+    <router-link to="/stats/leaderboard"
       class="block rounded-2xl p-4 mb-5 bg-dark-800/60 border border-dark-700/40
              hover:border-primary-500/40 hover:bg-dark-800/80 transition-all duration-200 group">
       <div class="flex items-center gap-4">

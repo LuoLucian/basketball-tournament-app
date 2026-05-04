@@ -45,33 +45,37 @@ export const useGameStore = defineStore('game', () => {
       return
     }
 
-    // 查询对应 team_players 获取球衣号
+    // 查询对应 team_players 获取球衣号和球队位置
     const teamIds = [...new Set(lineupData.map(l => l.team_id))]
     const playerIds = [...new Set(lineupData.map(l => l.player_id))]
     const { data: tpData } = await supabase
       .from('team_players')
-      .select('team_id, player_id, jersey_no')
+      .select('team_id, player_id, jersey_no, position')
       .in('team_id', teamIds)
       .in('player_id', playerIds)
       .eq('is_active', true)
 
-    // 构建 player_id -> jersey_no 映射（优先用 team_id 匹配）
-    const jerseyMap = {}
+    // 构建 player_id -> { jersey_no, team_position } 映射（优先用 team_id 匹配）
+    const tpMap = {}
     if (tpData) {
       for (const tp of tpData) {
         const key = `${tp.team_id}_${tp.player_id}`
-        jerseyMap[key] = tp.jersey_no
+        tpMap[key] = { jersey_no: tp.jersey_no, team_position: tp.position }
       }
     }
 
-    // 补充 jersey_no 到 player 对象
-    const enriched = lineupData.map(l => ({
-      ...l,
-      player: {
-        ...l.player,
-        jersey_no: jerseyMap[`${l.team_id}_${l.player_id}`] || l.player?.jersey_no || null
+    // 补充 jersey_no 和 team_position 到 player 对象
+    const enriched = lineupData.map(l => {
+      const tp = tpMap[`${l.team_id}_${l.player_id}`]
+      return {
+        ...l,
+        player: {
+          ...l.player,
+          jersey_no: tp?.jersey_no || l.player?.jersey_no || null,
+          position: tp?.team_position || l.player?.position || ''
+        }
       }
-    }))
+    })
 
     homeLineup.value = enriched.filter(l => l.team_id === currentGame.value?.home_team_id)
       .sort((a, b) => a.slot_no - b.slot_no)
@@ -80,7 +84,7 @@ export const useGameStore = defineStore('game', () => {
   }
 
   // 记录一个动作（得分/篮板等）— 通过 RPC 一次性完成
-  async function recordAction(playerId, teamId, actionType, delta = 1) {
+  async function recordAction(playerId, teamId, actionType, delta = 1, playerName = '') {
     if (!currentGame.value) return
     const gameId = currentGame.value.id
     const auth = useAuthStore()
@@ -106,7 +110,7 @@ export const useGameStore = defineStore('game', () => {
     }
 
     // 推入前端操作栈（用于撤销）
-    actionStack.value.push({ actionType, delta, playerId, teamId })
+    actionStack.value.push({ actionType, delta, playerId, teamId, player_name: playerName })
     return data
   }
 

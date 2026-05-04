@@ -113,7 +113,7 @@
 
   /* ═══════ 页面容器 ═══════ */
   .page-container {
-    @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6;
+    @apply max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8;
   }
 
   /* ═══════ 统计卡片 ═══════ */

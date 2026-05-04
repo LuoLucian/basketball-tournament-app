@@ -72,19 +72,20 @@
                   <input v-model="editForm.shortName" type="text" class="input" maxlength="10" />
                 </div>
               </div>
-              <div class="form-group mb-3">
-                <label class="label">主题色</label>
-                <div class="flex gap-2 flex-wrap">
-                  <button v-for="c in TEAM_COLORS" :key="c" type="button"
-                    @click="editForm.color = c"
-                    class="w-7 h-7 rounded-full border-2 transition-all duration-200 hover:scale-110"
-                    :style="{ backgroundColor: c }"
-                    :class="editForm.color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent'"
-                  ></button>
+                <div class="form-group mb-3">
+                  <label class="label">主题色</label>
+                  <div class="flex gap-2 flex-wrap">
+                    <button v-for="c in TEAM_COLORS" :key="c" type="button"
+                      @click="editForm.color = c"
+                      class="w-7 h-7 rounded-full border-2 transition-all duration-200 hover:scale-110"
+                      :style="{ backgroundColor: c }"
+                      :class="editForm.color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent'"
+                    ></button>
+                  </div>
+                  <p v-if="isEditColorDuplicate" class="text-xs text-warning mt-1.5">⚠️ 该颜色已被其他球队使用，请更换</p>
                 </div>
-              </div>
               <div class="flex gap-3 pt-3">
-                <button @click="saveTeamInfo" :disabled="saving"
+                <button @click="saveTeamInfo" :disabled="saving || isEditColorDuplicate"
                   class="flex-1 py-2.5 rounded-xl text-sm font-bold
                          bg-gradient-to-r from-primary-600 to-primary-500
                          text-white shadow-lg shadow-primary-600/20
@@ -126,7 +127,7 @@
               <!-- 成员网格 -->
               <div v-if="members.length > 0" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-3">
                 <router-link v-for="m in members" :key="m.player_id"
-                  :to="`/players/${m.player_id}?from=teams`"
+                  :to="`/players/${m.player_id}?from=teams&teamId=${expandedTeamId}`"
                   class="relative group/member flex flex-col items-center gap-2 p-3 rounded-2xl
                          border border-dark-700/30 bg-dark-800/30
                          hover:border-primary-600/40 hover:bg-dark-800/60
@@ -151,18 +152,20 @@
                     </p>
                     <!-- 管理员：球衣号+位置可点击编辑 -->
                     <button v-if="canManage(team)" @click.prevent="openJerseyEdit(m)"
-                      class="flex items-center justify-center gap-0.5 mt-0.5 mx-auto px-2 py-0.5 rounded-lg
-                             hover:bg-primary-500/15 border border-transparent hover:border-primary-500/30
-                             transition-all duration-150"
-                      :title="'点击修改 ' + m.player_name + ' 的球衣号和位置'">
+                      class="flex items-center justify-center gap-1 mt-0.5 mx-auto px-2 py-1 rounded-lg
+                             bg-dark-800/60 border border-dark-600 hover:border-primary-500/50
+                             hover:bg-primary-500/10 transition-all duration-150"
+                    >
                       <span class="text-[11px] font-bold" :style="{ color: team.color || '#3b82f6' }">
                         #{{ m.jersey_no || '?' }}
                       </span>
-                      <span v-if="m.team_position" class="text-[10px] text-dark-500">
+                      <span v-if="m.team_position" class="text-[10px] text-dark-400">
                         {{ POSITION_LABELS[m.team_position] || m.team_position }}
                       </span>
-                      <svg class="w-2.5 h-2.5 text-dark-600 group-hover/member:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                      <span v-else class="text-[10px] text-dark-600">未设置</span>
+                      <span class="text-[10px] text-dark-500">设置</span>
+                      <svg class="w-3 h-3 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                       </svg>
                     </button>
                     <!-- 游客：只读球衣号+位置 -->
@@ -182,11 +185,11 @@
                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                   </svg>
-                  <!-- 管理员移除按钮 -->
+                  <!-- 管理员移除按钮（始终可见，hover 加深颜色） -->
                   <button v-if="canManage(team)" @click.prevent="removeMember(m)"
                     class="absolute top-2 left-2 w-5 h-5 rounded-md flex items-center justify-center
-                           text-dark-600 hover:text-danger hover:bg-danger/10
-                           opacity-0 group-hover/member:opacity-100 transition-all duration-150"
+                           text-dark-500 hover:text-danger hover:bg-danger/10
+                           transition-all duration-150"
                     title="移除成员">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
@@ -252,10 +255,11 @@
                     :class="newTeam.color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent'"
                   ></button>
                 </div>
+                <p v-if="isNewColorDuplicate" class="text-xs text-warning mt-1.5">⚠️ 该颜色已被其他球队使用，请更换</p>
               </div>
               <div class="flex gap-2 pt-2">
                 <button type="button" @click="showCreateModal = false" class="btn-secondary flex-1">取消</button>
-                <button type="submit" class="btn-primary flex-1" :disabled="creating">
+                <button type="submit" class="btn-primary flex-1" :disabled="creating || isNewColorDuplicate">
                   {{ creating ? '创建中...' : '创建' }}
                 </button>
               </div>
@@ -282,17 +286,21 @@
               <input v-model.number="jerseyEditNo" type="number" min="0" max="99"
                 class="input text-center text-2xl font-bold mb-3" placeholder="0-99"
                 @keyup.enter="saveJersey" />
-              <!-- 位置选择 -->
-              <div v-if="jerseyEditPlayer.player_positions" class="mb-4">
+              <!-- 位置选择（只能从球员档案位置中选一个） -->
+              <div class="mb-4">
                 <label class="block text-xs text-dark-400 mb-1.5">球队位置</label>
                 <select v-model="jerseyEditPosition"
                   class="w-full bg-dark-800 border border-dark-600 rounded-xl px-3 py-2 text-sm text-white
                          focus:border-primary-500 outline-none transition-all">
                   <option value="">不指定</option>
-                  <option v-for="pos in jerseyEditPlayer.player_positions.split(',').filter(Boolean)" :key="pos" :value="pos">
-                    {{ POSITION_LABELS[pos] || pos }}
+                  <option v-if="jerseyEditPlayer && jerseyEditPlayer.player_positions"
+                    v-for="pos in jerseyEditPlayer.player_positions.split(',').filter(Boolean)" :key="pos" :value="pos">
+                    {{ POSITION_LABELS[pos] || pos }} ({{ pos }})
                   </option>
                 </select>
+                <p v-if="jerseyEditPlayer && !jerseyEditPlayer.player_positions" class="text-[10px] text-dark-600 mt-1">
+                  该球员档案未设置位置，请先在球员档案中设置位置
+                </p>
               </div>
               <div class="flex gap-3">
                 <button @click="jerseyEditPlayer = null" class="btn-secondary flex-1">取消</button>
@@ -407,16 +415,22 @@
                     </p>
                   </div>
                   <!-- 位置选择（选中后显示） -->
-                  <select v-if="pickerSelected.has(p.id) && p.position"
-                    :value="pickerPositions[p.id] || ''"
-                    @change="pickerPositions[p.id] = $event.target.value"
-                    class="px-1.5 py-1 rounded-lg text-[10px] bg-dark-800 border border-dark-600
-                           text-dark-300 outline-none focus:border-primary-500 flex-shrink-0">
-                    <option value="">选位置</option>
-                    <option v-for="pos in p.position.split(',').filter(Boolean)" :key="pos" :value="pos">
-                      {{ POSITION_LABELS[pos] || pos }}
-                    </option>
-                  </select>
+                  <div v-if="pickerSelected.has(p.id)" class="flex items-center gap-1 flex-shrink-0">
+                    <select
+                      :value="pickerPositions[p.id] || ''"
+                      @change="pickerPositions[p.id] = $event.target.value"
+                      class="px-1.5 py-1 rounded-lg text-[10px] bg-dark-800 border border-dark-600
+                             text-dark-300 outline-none focus:border-primary-500 flex-shrink-0">
+                  <option value="">选位置</option>
+                  <option v-if="p.position"
+                    v-for="pos in p.position.split(',').filter(Boolean)" :key="pos" :value="pos">
+                    {{ POSITION_LABELS[pos] || pos }} ({{ pos }})
+                  </option>
+                </select>
+                <p v-if="!p.position" class="text-[10px] text-dark-600 flex-shrink-0">
+                  无位置
+                </p>
+                  </div>
                   <!-- 状态 -->
                   <span v-if="p._inTeam" class="text-[10px] text-dark-600 flex-shrink-0">已在队中</span>
                 </button>
@@ -446,10 +460,13 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/utils/supabase'
 import { TEAM_COLORS, POSITION_LABELS } from '@/utils/helpers'
 
 const auth = useAuthStore()
+const route = useRoute()
+const _router = useRouter()
 
 // ── 数据 ──
 const teams = ref([])
@@ -488,6 +505,16 @@ const pickerList = computed(() => {
 
 // 可选数量（排除已在队中的）
 const selectableCount = computed(() => pickerList.value.filter(p => !p._inTeam).length)
+
+// 颜色唯一性校验
+const isEditColorDuplicate = computed(() => {
+  if (!editForm.color || !expandedTeamId.value) return false
+  return teams.value.some(t => t.color === editForm.color && t.id !== expandedTeamId.value)
+})
+const isNewColorDuplicate = computed(() => {
+  if (!newTeam.color) return false
+  return teams.value.some(t => t.color === newTeam.color)
+})
 
 function openPlayerPicker() {
   pickerSearch.value = ''
@@ -795,10 +822,32 @@ async function createTeam() {
   }
 }
 
-onMounted(() => {
-  loadTeams()
-  if (auth.isAdmin) loadAllPlayers()
+onMounted(async () => {
+  await loadTeams()
+  if (auth.isAdmin) await loadAllPlayers()
+  // 初次加载时，若 URL 带有 expand 参数，自动展开该球队
+  const expandId = route.query.expand
+  if (expandId && teams.value.some(t => t.id === expandId)) {
+    await toggleExpandById(expandId)
+  }
 })
+
+// 监听路由参数变化（从球员页返回时触发）
+watch(() => route.query.expand, async (newId) => {
+  if (newId && teams.value.some(t => t.id === newId) && expandedTeamId.value !== newId) {
+    await toggleExpandById(newId)
+  }
+})
+
+async function toggleExpandById(teamId) {
+  const team = teams.value.find(t => t.id === teamId)
+  if (!team) return
+  expandedTeamId.value = teamId
+  editForm.name = team.name || ''
+  editForm.shortName = team.short_name || ''
+  editForm.color = team.color || TEAM_COLORS[0]
+  await loadMembers(teamId)
+}
 </script>
 
 <style scoped>
