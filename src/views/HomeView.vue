@@ -35,6 +35,25 @@
       </div>
     </div>
 
+    <!-- 排行榜快捷入口 -->
+    <router-link to="/leaderboard"
+      class="block rounded-2xl p-4 mb-5 bg-dark-800/60 border border-dark-700/40
+             hover:border-primary-500/40 hover:bg-dark-800/80 transition-all duration-200 group">
+      <div class="flex items-center gap-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20
+                    border border-yellow-500/20 flex items-center justify-center text-lg flex-shrink-0">
+          🏆
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="text-sm font-semibold text-white group-hover:text-primary-300 transition-colors">排行榜</h3>
+          <p class="text-xs text-dark-500 mt-0.5">查看得分、篮板、助攻等数据排名</p>
+        </div>
+        <svg class="w-4 h-4 text-dark-600 group-hover:text-dark-400 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      </div>
+    </router-link>
+
     <!-- 比赛预告（核心区域） -->
     <div class="mb-6">
       <div class="flex items-center justify-between mb-3">

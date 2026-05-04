@@ -6,10 +6,9 @@
       <h3 class="font-semibold text-sm truncate" :style="{ color: team?.color || '#94a3b8' }">
         {{ team?.name || '队伍' }}
       </h3>
-      <span class="text-[10px] px-2 py-0.5 rounded-full font-medium"
-            :class="gameStatus === 'active' ? 'bg-green-500/15 text-green-400' : 'bg-dark-800 text-dark-500'">
-        {{ gameStatus === 'active' ? '比赛中' : '未开始' }}
-      </span>
+        <span class="text-[10px] px-2 py-0.5 rounded-full font-medium" :class="statusLabelColor">
+          {{ statusLabel }}
+        </span>
     </div>
 
     <!-- 上场阵容区 -->
@@ -47,7 +46,8 @@
             <button @click.stop="moveToBench(player)"
                     class="px-2 py-1 rounded-lg text-[10px] font-medium text-dark-500
                            hover:text-danger hover:bg-danger/10 border border-transparent
-                           hover:border-danger/30 active:scale-95 transition-all">
+                           hover:border-danger/30 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    :disabled="!canChangeLineup">
               下场
             </button>
           </div>
@@ -83,8 +83,8 @@
         <!-- 得分行 -->
         <div class="grid grid-cols-3 gap-1.5 mb-1.5">
           <button v-for="btn in scoreButtons" :key="btn.type" @click="record(btn.type)"
-                  class="py-2 rounded-lg text-[12px] font-bold text-white transition-all active:scale-95"
-                  :class="btn.cls">
+                  class="py-2 rounded-lg text-[12px] font-bold text-white transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                  :class="btn.cls" :disabled="!canRecord">
             {{ btn.label }}
           </button>
         </div>
@@ -92,7 +92,8 @@
         <div class="grid grid-cols-4 gap-1">
           <button v-for="btn in statButtons" :key="btn.type" @click="record(btn.type)"
                   class="py-1.5 rounded-lg text-[10px] font-medium border border-dark-700 bg-dark-800 text-dark-300
-                         hover:bg-dark-700 hover:text-white active:scale-95 transition-all">
+                         hover:bg-dark-700 hover:text-white active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  :disabled="!canRecord">
             {{ btn.label }}
           </button>
         </div>
@@ -100,7 +101,8 @@
         <div class="grid grid-cols-3 gap-1.5 mt-1.5">
           <button v-for="btn in missButtons" :key="btn.type" @click="record(btn.type)"
                   class="py-1.5 rounded-lg text-[10px] font-medium border border-dark-700/30 bg-dark-800/50 text-dark-500
-                         hover:text-dark-300 hover:bg-dark-800 active:scale-95 transition-all">
+                         hover:text-dark-300 hover:bg-dark-800 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  :disabled="!canRecord">
             {{ btn.label }}
           </button>
         </div>
@@ -135,7 +137,8 @@
           <button @click.stop="moveToCourt(player)"
                   class="px-2 py-1 rounded-lg text-[10px] font-semibold text-primary-500
                          hover:bg-primary-500/10 border border-transparent
-                         hover:border-primary-500/30 active:scale-95 transition-all flex-shrink-0">
+                         hover:border-primary-500/30 active:scale-95 transition-all flex-shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+                  :disabled="!canChangeLineup">
             上场
           </button>
         </div>
@@ -148,7 +151,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { supabase } from '@/utils/supabase'
 
 const props = defineProps({
@@ -157,7 +160,8 @@ const props = defineProps({
   gameId: String,
   teamId: String,
   gameType: String,
-  gameStatus: String
+  gameStatus: String,
+  readonly: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['record', 'lineupChange'])
@@ -166,31 +170,29 @@ const courtPlayers = ref([])
 const benchPlayers = ref([])
 const selectedPlayer = ref(null)
 const allTeamMembers = ref([])
-const loaded = ref(false)
+const membersLoaded = ref(false)
 
-async function loadData() {
-  if (!props.teamId || !props.gameId) return
+const canRecord = computed(() => props.gameStatus === 'active' && !props.readonly)
+const canChangeLineup = computed(() => 
+  props.gameStatus !== 'finished' && props.gameStatus !== 'cancelled' && !props.readonly
+)
+const statusLabel = computed(() => {
+  if (props.gameStatus === 'active') return '比赛中'
+  if (props.gameStatus === 'finished') return '已结束'
+  if (props.gameStatus === 'cancelled') return '已取消'
+  return '未开始'
+})
+const statusLabelColor = computed(() => {
+  if (props.gameStatus === 'active') return 'bg-green-500/15 text-green-400'
+  return 'bg-dark-800 text-dark-500'
+})
 
-  const { data: teamPlayerData } = await supabase
-    .from('team_players')
-    .select('player_id, jersey_no, players!inner(id, name, position, avatar_url)')
-    .eq('team_id', props.teamId)
-    .eq('is_active', true)
-    .order('jersey_no')
+// 同步阵容：根据最新的 lineup prop 更新 courtPlayers 和 benchPlayers
+function syncLineup(lineup) {
+  console.log('[TeamPanel] syncLineup called, lineup count:', lineup.length, 'members loaded:', allTeamMembers.value.length)
+  const courtIds = new Set(lineup.map(l => l.player_id))
 
-  if (teamPlayerData) {
-    allTeamMembers.value = teamPlayerData.map(m => ({
-      id: m.player_id,
-      jersey_no: m.jersey_no,
-      name: m.players?.name || '',
-      position: m.players?.position || '',
-      avatar_url: m.players?.avatar_url || null
-    }))
-  }
-
-  const courtIds = new Set(props.lineup.map(l => l.player_id))
-
-  courtPlayers.value = props.lineup.map(l => ({
+  courtPlayers.value = lineup.map(l => ({
     id: l.player_id,
     name: l.player?.name || '',
     jersey_no: l.player?.jersey_no || '',
@@ -200,16 +202,48 @@ async function loadData() {
   }))
 
   benchPlayers.value = allTeamMembers.value.filter(m => !courtIds.has(m.id))
-  loaded.value = true
 }
 
-watch(() => props.lineup, () => {
-  if (loaded.value) return
-  loadData()
-}, { immediate: true })
+// 初始化：加载球队全部成员（只需一次），然后同步阵容
+async function loadData() {
+  if (!props.teamId || !props.gameId) return
+
+  if (!membersLoaded.value) {
+    const { data: teamPlayerData } = await supabase
+      .from('team_players')
+      .select('player_id, jersey_no, players!inner(id, name, position, avatar_url)')
+      .eq('team_id', props.teamId)
+      .eq('is_active', true)
+      .order('jersey_no')
+
+    if (teamPlayerData) {
+      allTeamMembers.value = teamPlayerData.map(m => ({
+        id: m.player_id,
+        jersey_no: m.jersey_no,
+        name: m.players?.name || '',
+        position: m.players?.position || '',
+        avatar_url: m.players?.avatar_url || null
+      }))
+    }
+    membersLoaded.value = true
+  }
+
+  syncLineup(props.lineup)
+}
+
+// 监听 lineup prop 变化（来自 gameStore realtime 更新），每次都重新同步阵容
+watch(() => props.lineup, (newLineup) => {
+  if (membersLoaded.value) {
+    // 成员已加载，直接同步阵容
+    syncLineup(newLineup)
+  } else {
+    // 成员还未加载，走完整初始化
+    loadData()
+  }
+}, { immediate: true, deep: true })
 
 onMounted(() => {
-  if (!loaded.value) loadData()
+  if (!membersLoaded.value) loadData()
 })
 
 function selectPlayer(player) {
@@ -217,7 +251,7 @@ function selectPlayer(player) {
 }
 
 function record(actionType) {
-  if (!selectedPlayer.value) return
+  if (!selectedPlayer.value || !canRecord.value) return
   emit('record', {
     playerId: selectedPlayer.value.id,
     teamId: props.teamId,
@@ -227,9 +261,15 @@ function record(actionType) {
 
 // 点击换人
 async function moveToCourt(player) {
-  if (courtPlayers.value.length >= 5) return
+  if (!canChangeLineup.value) return
+  console.log('[TeamPanel] moveToCourt called', player.name, 'court count:', courtPlayers.value.length)
+  if (courtPlayers.value.length >= 5) {
+    console.warn('[TeamPanel] court is full, cannot add player')
+    return
+  }
   const slotNo = courtPlayers.value.length + 1
   const ok = await addPlayerToLineup(player, slotNo)
+  console.log('[TeamPanel] addPlayerToLineup result:', ok)
   if (ok) {
     benchPlayers.value = benchPlayers.value.filter(p => p.id !== player.id)
     courtPlayers.value.push(player)
@@ -237,11 +277,12 @@ async function moveToCourt(player) {
 }
 
 async function moveToBench(player) {
+  console.log('[TeamPanel] moveToBench called', player.name)
   const ok = await removePlayerFromLineup(player)
+  console.log('[TeamPanel] removePlayerFromLineup result:', ok)
   if (ok) {
     courtPlayers.value = courtPlayers.value.filter(p => p.id !== player.id)
     benchPlayers.value.push(player)
-    // 如果正在录入该球员，取消选中
     if (selectedPlayer.value?.id === player.id) {
       selectedPlayer.value = null
     }
@@ -251,8 +292,12 @@ async function moveToBench(player) {
 // ── 数据库（通过 RPC 绕过 RLS）──
 
 async function addPlayerToLineup(player, slotNo) {
-  if (!props.gameId || !props.teamId) return false
+  if (!props.gameId || !props.teamId) {
+    console.error('[TeamPanel] missing gameId or teamId', props.gameId, props.teamId)
+    return false
+  }
   try {
+    console.log('[TeamPanel] calling swap_player add', { gameId: props.gameId, teamId: props.teamId, playerId: player.id, slotNo })
     const { data, error } = await supabase.rpc('swap_player', {
       p_game_id: props.gameId,
       p_team_id: props.teamId,
@@ -260,6 +305,7 @@ async function addPlayerToLineup(player, slotNo) {
       p_slot_no: slotNo,
       p_mode: 'add'
     })
+    console.log('[TeamPanel] swap_player add response:', { data, error })
     if (error) throw error
     const idx = courtPlayers.value.findIndex(p => p.id === player.id)
     if (idx >= 0 && data) {
@@ -268,25 +314,30 @@ async function addPlayerToLineup(player, slotNo) {
     emit('lineupChange', courtPlayers.value)
     return true
   } catch (e) {
-    console.error('添加球员失败:', e)
+    console.error('[TeamPanel] addPlayerToLineup error:', e)
     return false
   }
 }
 
 async function removePlayerFromLineup(player) {
-  if (!props.gameId || !props.teamId) return false
+  if (!props.gameId || !props.teamId) {
+    console.error('[TeamPanel] missing gameId or teamId', props.gameId, props.teamId)
+    return false
+  }
   try {
-    const { error } = await supabase.rpc('swap_player', {
+    console.log('[TeamPanel] calling swap_player remove', { gameId: props.gameId, teamId: props.teamId, playerId: player.id })
+    const { data, error } = await supabase.rpc('swap_player', {
       p_game_id: props.gameId,
       p_team_id: props.teamId,
       p_player_id: player.id,
       p_mode: 'remove'
     })
+    console.log('[TeamPanel] swap_player remove response:', { data, error })
     if (error) throw error
     emit('lineupChange', courtPlayers.value)
     return true
   } catch (e) {
-    console.error('移除球员失败:', e)
+    console.error('[TeamPanel] removePlayerFromLineup error:', e)
     return false
   }
 }

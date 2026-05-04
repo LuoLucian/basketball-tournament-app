@@ -85,14 +85,14 @@
         </button>
 
         <!-- 开始 -->
-        <button v-if="gameStore.currentGame.status === 'pending'" @click="startGame" :disabled="starting"
+        <button v-if="gameStore.currentGame.status === 'pending'" @click="startGame" :disabled="starting || !canManageGame"
           class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
           :class="starting ? 'bg-green-800 text-green-300 cursor-wait' : 'bg-green-600 text-white'">
           {{ starting ? '开始中...' : '开始' }}
         </button>
 
         <!-- 结束 -->
-        <button v-if="gameStore.currentGame.status === 'active'" @click="endGame" :disabled="ending"
+        <button v-if="gameStore.currentGame.status === 'active'" @click="endGame" :disabled="ending || !canManageGame"
           class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
           :class="ending ? 'bg-red-800 text-red-300 cursor-wait' : 'bg-red-600 text-white'">
           {{ ending ? '结束中...' : '结束' }}
@@ -120,6 +120,7 @@
           :team-id="gameStore.currentGame.home_team_id"
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
+          :readonly="!canRecord"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
           class="flex-1 min-w-0"
@@ -136,6 +137,7 @@
           :team-id="gameStore.currentGame.away_team_id"
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
+          :readonly="!canRecord"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
           class="flex-1 min-w-0"
@@ -164,7 +166,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
@@ -182,10 +184,45 @@ const toastMsg = ref('')
 const starting = ref(false)
 const ending = ref(false)
 
+// ── 权限逻辑 ──
+const isTeamAdmin = computed(() => {
+  if (!gameStore.currentGame) return false
+  const uid = auth.user?.id
+  if (!uid) return false
+  return gameStore.currentGame.home_team?.owner_id === uid
+    || gameStore.currentGame.away_team?.owner_id === uid
+})
+
+const canRecord = computed(() => {
+  if (!gameStore.currentGame) return false
+  if (['finished', 'cancelled'].includes(gameStore.currentGame.status)) return false
+  const uid = auth.user?.id
+  if (!uid) return false
+  const isAssigned = assignedRecorders.value.some(r => r.recorder_id === uid)
+  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value || isAssigned
+})
+
+const canManageGame = computed(() => {
+  if (!gameStore.currentGame) return false
+  if (['finished', 'cancelled'].includes(gameStore.currentGame.status)) return false
+  const uid = auth.user?.id
+  if (!uid) return false
+  const isAssigned = assignedRecorders.value.some(r => r.recorder_id === uid)
+  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value || isAssigned
+})
+
+const assignedRecorders = ref([])
+
 onMounted(async () => {
   try {
     await gameStore.loadGame(gameId)
     gameStore.subscribeRealtime(gameId)
+    // 查询指派记录员
+    const { data: recData } = await supabase
+      .from('game_recorders')
+      .select('recorder_id')
+      .eq('game_id', gameId)
+    assignedRecorders.value = recData || []
   } catch (e) {
     console.error('加载比赛失败:', e)
   } finally {
@@ -258,6 +295,8 @@ async function endGame() {
     if (error) throw error
     showToast('比赛已结束')
     await gameStore.loadGame(gameId)
+    // 比赛结束前先快照所有参赛球员数据
+    await supabase.rpc('snapshot_game_players', { p_game_id: gameId })
     await calcMvp()
   } catch (e) {
     showToast('结束失败：' + (e.message || '未知错误'))
@@ -269,10 +308,18 @@ async function endGame() {
 async function calcMvp() {
   const { data: stats } = await supabase.from('game_stats').select('*').eq('game_id', gameId)
   if (!stats?.length) return
-  const scored = stats.map(s => ({
+  const g = gameStore.currentGame
+  // 判断胜方（平局时 null，全员可参选）
+  let winnerTeamId = null
+  if (g.home_score > g.away_score) winnerTeamId = g.home_team_id
+  else if (g.away_score > g.home_score) winnerTeamId = g.away_team_id
+  // 只从胜方选 MVP（平局则全员参选）
+  const candidates = winnerTeamId ? stats.filter(s => s.team_id === winnerTeamId) : stats
+  const scored = candidates.map(s => ({
     ...s,
     mvp_score: s.pts * 1.2 + s.reb * 1.1 + s.ast * 1.5 + s.stl * 2 + s.blk * 2 - s.tov * 1.5 - s.pf * 0.8
   }))
+  if (!scored.length) return
   const winner = scored.reduce((a, b) => a.mvp_score > b.mvp_score ? a : b)
   await supabase.from('game_mvp').upsert(scored.map(s => ({
     game_id: gameId, player_id: s.player_id,

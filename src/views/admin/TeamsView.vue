@@ -149,26 +149,29 @@
                     <p class="text-sm font-semibold text-white group-hover/member:text-primary-300 transition-colors">
                       {{ m.player_name }}
                     </p>
-                    <!-- 管理员：球衣号可点击编辑 -->
+                    <!-- 管理员：球衣号+位置可点击编辑 -->
                     <button v-if="canManage(team)" @click.prevent="openJerseyEdit(m)"
                       class="flex items-center justify-center gap-0.5 mt-0.5 mx-auto px-2 py-0.5 rounded-lg
                              hover:bg-primary-500/15 border border-transparent hover:border-primary-500/30
                              transition-all duration-150"
-                      :title="'点击修改 ' + m.player_name + ' 的球衣号'">
+                      :title="'点击修改 ' + m.player_name + ' 的球衣号和位置'">
                       <span class="text-[11px] font-bold" :style="{ color: team.color || '#3b82f6' }">
                         #{{ m.jersey_no || '?' }}
+                      </span>
+                      <span v-if="m.team_position" class="text-[10px] text-dark-500">
+                        {{ POSITION_LABELS[m.team_position] || m.team_position }}
                       </span>
                       <svg class="w-2.5 h-2.5 text-dark-600 group-hover/member:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                       </svg>
                     </button>
-                    <!-- 游客：只读球衣号 -->
+                    <!-- 游客：只读球衣号+位置 -->
                     <div v-else class="flex items-center justify-center gap-1 mt-0.5">
                       <span class="text-[11px] font-bold" :style="{ color: team.color || '#3b82f6' }">
                         #{{ m.jersey_no || '?' }}
                       </span>
-                      <span v-if="m.position" class="text-[10px] text-dark-500">
-                        {{ m.position.split(',').map(p => POSITION_LABELS[p] || p).join('/') }}
+                      <span v-if="m.team_position" class="text-[10px] text-dark-500">
+                        {{ POSITION_LABELS[m.team_position] || m.team_position }}
                       </span>
                     </div>
                   </div>
@@ -277,8 +280,20 @@
               <h3 class="text-lg font-semibold text-white mb-1">修改球衣号</h3>
               <p class="text-sm text-dark-400 mb-4">{{ jerseyEditPlayer.player_name }}</p>
               <input v-model.number="jerseyEditNo" type="number" min="0" max="99"
-                class="input text-center text-2xl font-bold mb-4" placeholder="0-99"
+                class="input text-center text-2xl font-bold mb-3" placeholder="0-99"
                 @keyup.enter="saveJersey" />
+              <!-- 位置选择 -->
+              <div v-if="jerseyEditPlayer.player_positions" class="mb-4">
+                <label class="block text-xs text-dark-400 mb-1.5">球队位置</label>
+                <select v-model="jerseyEditPosition"
+                  class="w-full bg-dark-800 border border-dark-600 rounded-xl px-3 py-2 text-sm text-white
+                         focus:border-primary-500 outline-none transition-all">
+                  <option value="">不指定</option>
+                  <option v-for="pos in jerseyEditPlayer.player_positions.split(',').filter(Boolean)" :key="pos" :value="pos">
+                    {{ POSITION_LABELS[pos] || pos }}
+                  </option>
+                </select>
+              </div>
               <div class="flex gap-3">
                 <button @click="jerseyEditPlayer = null" class="btn-secondary flex-1">取消</button>
                 <button @click="saveJersey" :disabled="savingJersey || jerseyEditNo < 0 || jerseyEditNo > 99"
@@ -391,6 +406,17 @@
                       <span v-if="p.position">{{ p.position.split(',').map(pos => POSITION_LABELS[pos] || pos).join('/') }}</span>
                     </p>
                   </div>
+                  <!-- 位置选择（选中后显示） -->
+                  <select v-if="pickerSelected.has(p.id) && p.position"
+                    :value="pickerPositions[p.id] || ''"
+                    @change="pickerPositions[p.id] = $event.target.value"
+                    class="px-1.5 py-1 rounded-lg text-[10px] bg-dark-800 border border-dark-600
+                           text-dark-300 outline-none focus:border-primary-500 flex-shrink-0">
+                    <option value="">选位置</option>
+                    <option v-for="pos in p.position.split(',').filter(Boolean)" :key="pos" :value="pos">
+                      {{ POSITION_LABELS[pos] || pos }}
+                    </option>
+                  </select>
                   <!-- 状态 -->
                   <span v-if="p._inTeam" class="text-[10px] text-dark-600 flex-shrink-0">已在队中</span>
                 </button>
@@ -445,6 +471,7 @@ const editForm = reactive({ name: '', shortName: '', color: TEAM_COLORS[0] })
 const showPlayerPicker = ref(false)
 const pickerSearch = ref('')
 const pickerSelected = ref(new Set())  // 选中的球员ID集合
+const pickerPositions = ref({})  // 每个选中球员的位置 { playerId: 'PG' }
 const batchAdding = ref(false)
 
 // 可选球员列表（排除已在队中的，支持搜索过滤，排序）
@@ -465,23 +492,40 @@ const selectableCount = computed(() => pickerList.value.filter(p => !p._inTeam).
 function openPlayerPicker() {
   pickerSearch.value = ''
   pickerSelected.value = new Set()
+  pickerPositions.value = {}
   showPlayerPicker.value = true
 }
 
 function togglePickerSelect(p) {
   if (p._inTeam) return
   const newSet = new Set(pickerSelected.value)
-  if (newSet.has(p.id)) newSet.delete(p.id)
-  else newSet.add(p.id)
+  const newPositions = { ...pickerPositions.value }
+  if (newSet.has(p.id)) {
+    newSet.delete(p.id)
+    delete newPositions[p.id]
+  } else {
+    newSet.add(p.id)
+    // 自动选择球员的第一个位置
+    const positions = (p.position || '').split(',').filter(Boolean)
+    newPositions[p.id] = positions[0] || ''
+  }
   pickerSelected.value = newSet
+  pickerPositions.value = newPositions
 }
 
 function pickerSelectAll() {
   const selectable = pickerList.value.filter(p => !p._inTeam)
   if (pickerSelected.value.size === selectable.length) {
     pickerSelected.value = new Set()
+    pickerPositions.value = {}
   } else {
     pickerSelected.value = new Set(selectable.map(p => p.id))
+    const positions = {}
+    for (const p of selectable) {
+      const pos = (p.position || '').split(',').filter(Boolean)
+      positions[p.id] = pos[0] || ''
+    }
+    pickerPositions.value = positions
   }
 }
 
@@ -496,7 +540,8 @@ async function confirmBatchAdd() {
       const { error } = await supabase.rpc('add_team_player', {
         p_team_id: expandedTeamId.value,
         p_player_id: playerId,
-        p_jersey_no: null
+        p_jersey_no: null,
+        p_position: pickerPositions.value[playerId] || null
       })
       if (error) throw error
       successCount++
@@ -508,6 +553,7 @@ async function confirmBatchAdd() {
     alert(`成功添加 ${successCount} 人，${failCount} 人添加失败（可能已在队中）`)
   }
   pickerSelected.value = new Set()
+  pickerPositions.value = {}
   showPlayerPicker.value = false
   await loadMembers(expandedTeamId.value)
   await loadTeams()
@@ -521,6 +567,7 @@ const deleting = ref(false)
 // ── 球衣号编辑 ──
 const jerseyEditPlayer = ref(null)
 const jerseyEditNo = ref(0)
+const jerseyEditPosition = ref('')
 const savingJersey = ref(false)
 
 function openJerseyEdit(m) {
@@ -528,9 +575,12 @@ function openJerseyEdit(m) {
     player_id: m.player_id,
     player_name: m.player_name,
     jersey_no: m.jersey_no,
+    team_position: m.team_position || '',
+    player_positions: m.position || '',  // 球员库位置（逗号分隔）
     teamColor: teams.value.find(t => t.id === expandedTeamId.value)?.color || '#3b82f6'
   }
   jerseyEditNo.value = m.jersey_no || 0
+  jerseyEditPosition.value = m.team_position || ''
 }
 
 async function saveJersey() {
@@ -543,6 +593,16 @@ async function saveJersey() {
       p_new_jersey_no: jerseyEditNo.value
     })
     if (error) throw error
+    // 更新球队位置
+    const newPosition = jerseyEditPosition.value
+    if (newPosition !== jerseyEditPlayer.value.team_position) {
+      const { error: posErr } = await supabase.rpc('update_team_player_position', {
+        p_team_id: expandedTeamId.value,
+        p_player_id: jerseyEditPlayer.value.player_id,
+        p_position: newPosition || null
+      })
+      if (posErr) console.warn('[TeamsView] 更新位置失败:', posErr.message)
+    }
     jerseyEditPlayer.value = null
     await loadMembers(expandedTeamId.value)
   } catch (e) {
@@ -635,7 +695,8 @@ async function loadMembers(teamId) {
         player_id: m.player_id,
         jersey_no: m.jersey_no,
         player_name: m.players?.name || '',
-        position: m.players?.position || '',
+        position: m.players?.position || '',        // 球员库位置（多选，逗号分隔）
+        team_position: m.position || '',             // 球队位置（单选）
         height: m.players?.height || null,
         avatar_url: m.players?.avatar_url || null
       }))

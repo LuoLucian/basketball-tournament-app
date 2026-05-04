@@ -18,7 +18,15 @@
         </svg>
         进入录入
       </router-link>
-      <button v-if="auth.isSuperAdmin"
+      <button v-if="auth.isSuperAdmin && game && !editMode"
+        @click="enterEditMode"
+        class="btn-ghost btn-sm text-dark-500 hover:text-warning hover:bg-warning/10 hover:border-warning/20 flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+        </svg>
+        编辑数据
+      </button>
+      <button v-if="auth.isSuperAdmin && !editMode"
         @click="showDeleteConfirm = true"
         class="btn-ghost btn-sm text-dark-500 hover:text-danger hover:bg-danger/10 hover:border-danger/20 flex items-center gap-1.5">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -202,8 +210,8 @@
       <div class="card mb-4">
         <div class="card-header flex items-center justify-between">
           <h2 class="font-semibold text-white">球员数据</h2>
-          <!-- 队伍切换 -->
-          <div class="flex gap-1 bg-dark-800 rounded-lg p-0.5">
+          <!-- 队伍切换 / 编辑模式按钮 -->
+          <div v-if="!editMode" class="flex gap-1 bg-dark-800 rounded-lg p-0.5">
             <button v-for="opt in teamFilterOptions" :key="opt.value"
               @click="teamFilter = opt.value"
               class="px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200"
@@ -211,6 +219,14 @@
                 ? 'bg-primary-600/20 text-primary-300 shadow-sm'
                 : 'text-dark-500 hover:text-dark-300'">
               {{ opt.label }}
+            </button>
+          </div>
+          <div v-if="editMode" class="flex gap-2">
+            <button @click="saveEdits" :disabled="saving" class="px-3 py-1 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-500">
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
+            <button @click="cancelEdit" class="px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-dark-400 hover:text-white">
+              取消
             </button>
           </div>
         </div>

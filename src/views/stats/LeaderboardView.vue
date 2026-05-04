@@ -133,7 +133,9 @@ async function loadLeaderboard() {
     .from('game_stats')
     .select(`
       player_id,
+      team_id,
       player:player_id(name),
+      game:game_id(id, home_score, away_score, home_team_id, away_team_id),
       pts, reb, ast, stl, blk, tov, pf,
       fgm, fga, fg3m, fg3a
     `)
@@ -160,10 +162,33 @@ async function loadLeaderboard() {
     }
   }
 
-  leaderboard.value = Object.values(map).map(p => ({
-    ...p,
-    mvp_score: parseFloat(calcMvpScore(p))
-  }))
+  // 计算 MVP 分：只累加赢球场次
+  leaderboard.value = Object.values(map).map(p => {
+    // 重新遍历计算 MVP 分（只算赢球场次）
+    let mvpTotal = 0
+    for (const row of data) {
+      if (row.player_id !== p.player_id) continue
+      const g = row.game
+      if (!g) continue
+      // 判断该球员所在队伍是否赢了
+      const isHome = row.team_id === g.home_team_id
+      const isWin = (isHome && g.home_score > g.away_score)
+        || (!isHome && g.away_score > g.home_score)
+      if (!isWin) continue
+      // 赢球场次才计入 MVP 分
+      const stat = {
+        pts: row.pts || 0,
+        reb: row.reb || 0,
+        ast: row.ast || 0,
+        stl: row.stl || 0,
+        blk: row.blk || 0,
+        tov: row.tov || 0,
+        pf: row.pf || 0,
+      }
+      mvpTotal += parseFloat(calcMvpScore(stat))
+    }
+    return { ...p, mvp_score: mvpTotal }
+  })
   loading.value = false
 }
 

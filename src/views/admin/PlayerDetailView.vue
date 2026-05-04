@@ -17,13 +17,13 @@
       </button>
 
       <!-- 球员头部 -->
-      <div class="relative rounded-2xl p-6 mb-5 overflow-hidden
+      <div class="relative rounded-2xl p-4 sm:p-6 mb-5 overflow-hidden
                   bg-gradient-to-br from-primary-700/30 via-dark-850 to-dark-900
                   border border-primary-600/20">
         <div class="absolute -top-10 -right-10 w-32 h-32 bg-primary-500/10 rounded-full blur-2xl"></div>
         <div class="absolute -bottom-10 -left-10 w-24 h-24 bg-accent-500/5 rounded-full blur-2xl"></div>
-        <div class="relative z-10 flex items-center gap-5">
-          <div class="w-20 h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/40
+        <div class="relative z-10 flex items-center gap-4">
+          <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/40
                       text-primary-400 flex items-center justify-center text-3xl font-bold flex-shrink-0 overflow-hidden">
             <img v-if="player.avatar_url" :src="player.avatar_url" class="w-full h-full object-cover" />
             <span v-else>{{ getInitials(player.name) }}</span>
@@ -31,7 +31,7 @@
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <h1 class="text-2xl font-black text-white truncate text-gradient-accent">{{ player.name }}</h1>
+                <h1 class="text-xl sm:text-2xl font-black text-white truncate text-gradient-accent">{{ player.name }}</h1>
                 <div v-if="player.position" class="flex flex-wrap gap-1 mt-1">
                   <span v-for="pos in player.position.split(',')" :key="pos"
                     class="text-xs px-2 py-0.5 rounded-full bg-primary-600/20 text-primary-300 border border-primary-500/20">
@@ -39,14 +39,14 @@
                   </span>
                 </div>
                 <p v-else class="text-dark-500 text-sm mt-1">位置未指定</p>
-                <div class="flex flex-wrap gap-3 mt-2 text-xs text-dark-400">
+                <div class="flex flex-wrap gap-3 mt-2 text-sm text-dark-300">
                   <span v-if="player.height">{{ player.height }}cm</span>
-                  <span v-if="player.height && player.weight" class="text-dark-700">|</span>
+                  <span v-if="player.height && player.weight" class="text-dark-600">·</span>
                   <span v-if="player.weight">{{ player.weight }}kg</span>
                 </div>
               </div>
               <!-- 管理员操作 -->
-              <div v-if="auth.isAdmin" class="flex gap-2 flex-shrink-0">
+              <div v-if="auth.isAdmin" class="flex gap-2 mt-3 sm:mt-0 sm:flex-shrink-0">
                 <button @click="goEdit"
                   class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
                          bg-dark-800 border-dark-700 text-dark-400 hover:text-primary-400 hover:border-primary-500/30">
@@ -56,6 +56,11 @@
                   class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
                          bg-dark-800 border-dark-700 text-dark-400 hover:text-danger hover:border-danger/30">
                   删除
+                </button>
+                <button v-if="auth.isSuperAdmin" @click="showResetConfirm = true"
+                  class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
+                         bg-dark-800 border-dark-700 text-dark-400 hover:text-danger hover:border-danger/30">
+                  重置数据
                 </button>
               </div>
             </div>
@@ -242,6 +247,33 @@
           </div>
         </div>
       </Transition>
+
+      <!-- 重置确认弹窗 -->
+      <Transition name="fade">
+        <div v-if="showResetConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="showResetConfirm = false">
+          <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+          <div class="relative bg-dark-850 border border-dark-700/50 rounded-2xl p-6 max-w-sm w-full shadow-glass animate-scale-in">
+            <div class="text-center">
+              <div class="w-14 h-14 rounded-full bg-warning/10 border border-warning/20 flex items-center justify-center mx-auto mb-4">
+                <svg class="w-7 h-7 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+              </div>
+              <h3 class="text-lg font-semibold text-white mb-2">重置球员数据</h3>
+              <p class="text-sm text-dark-400 mb-1">确定要重置 <span class="text-white font-medium">{{ player?.name }}</span> 的所有比赛数据吗？</p>
+              <p class="text-xs text-dark-500 mb-5">该球员的所有比赛统计将被清零，此操作不可撤销</p>
+              <div class="flex gap-3">
+                <button @click="showResetConfirm = false" class="btn-secondary flex-1">取消</button>
+                <button @click="confirmReset" :disabled="resetting" class="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold
+                  bg-warning/20 border border-warning/30 text-warning hover:bg-warning/30
+                  transition-all duration-200 disabled:opacity-50">
+                  {{ resetting ? '重置中...' : '确认重置' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </template>
   </div>
 </template>
@@ -277,6 +309,10 @@ function goBack() {
 // 删除状态
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)
+
+// 重置状态
+const showResetConfirm = ref(false)
+const resetting = ref(false)
 
 // 雷达图配置
 const chartSize = 280
@@ -425,6 +461,28 @@ async function confirmDelete() {
     alert('删除失败：' + (e.message || '未知错误'))
   } finally {
     deleting.value = false
+  }
+}
+
+async function confirmReset() {
+  resetting.value = true
+  try {
+    const { error } = await supabase.rpc('admin_reset_player_stats', {
+      p_player_id: playerId
+    })
+    if (error) throw error
+    showResetConfirm.value = false
+    // 重新加载数据
+    const { data: sData } = await supabase
+      .from('game_stats')
+      .select(`*, game:game_id(id, title, started_at, game_type)`)
+      .eq('player_id', playerId)
+      .order('created_at', { ascending: false })
+    if (sData) allStats.value = sData
+  } catch (e) {
+    alert('重置失败：' + (e.message || '未知错误'))
+  } finally {
+    resetting.value = false
   }
 }
 

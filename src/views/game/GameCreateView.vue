@@ -48,8 +48,21 @@
         </div>
 
         <div class="form-group">
-          <label class="label">比赛时间</label>
-          <input v-model="form.scheduledAt" type="datetime-local" class="input" />
+          <label class="label">比赛日期</label>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-dark-400 mb-1.5">日期</label>
+              <input v-model="form.date" type="date" required
+                class="w-full bg-dark-800 border border-dark-700 rounded-xl px-3 py-2.5 text-sm text-white
+                       focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 outline-none transition-all" />
+            </div>
+            <div>
+              <label class="block text-xs text-dark-400 mb-1.5">时间</label>
+              <input v-model="form.time" type="time" required
+                class="w-full bg-dark-800 border border-dark-700 rounded-xl px-3 py-2.5 text-sm text-white
+                       focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 outline-none transition-all" />
+            </div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -58,28 +71,45 @@
         </div>
       </div>
 
-      <!-- 赛制选择 -->
-      <div class="card card-body animate-fade-in" style="animation-delay: 80ms">
-        <h2 class="font-semibold text-white flex items-center gap-2 mb-4">
+      <!-- 对阵球队 -->
+      <div class="card card-body space-y-4 animate-fade-in" style="animation-delay: 80ms">
+        <h2 class="font-semibold text-white flex items-center gap-2">
           <span class="w-6 h-6 bg-primary-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+          对阵球队
+        </h2>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="label">主队</label>
+            <select v-model="form.homeTeamId" class="input" required>
+              <option value="">请选择</option>
+              <option v-for="t in teams" :key="t.id" :value="t.id">{{ t.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="label">客队</label>
+            <select v-model="form.awayTeamId" class="input" required>
+              <option value="">请选择</option>
+              <option v-for="t in teams" :key="t.id" :value="t.id" :disabled="t.id === form.homeTeamId">{{ t.name }}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 赛制选择 -->
+      <div class="card card-body animate-fade-in" style="animation-delay: 160ms">
+        <h2 class="font-semibold text-white flex items-center gap-2 mb-4">
+          <span class="w-6 h-6 bg-primary-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
           赛制 <span class="text-danger">*</span>
         </h2>
-        <div class="grid sm:grid-cols-2 gap-3">
-          <label v-for="gt in gameTypes" :key="gt.value"
-            class="relative flex flex-col gap-2 p-4 rounded-2xl border-2 cursor-pointer transition-all duration-300"
+        <div class="flex gap-2 bg-dark-800 rounded-xl p-1">
+          <button v-for="gt in gameTypes" :key="gt.value"
+            @click="form.gameType = gt.value"
+            class="flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-200"
             :class="form.gameType === gt.value
-              ? 'border-primary-500 bg-primary-600/10 shadow-neon-blue'
-              : 'border-dark-700 bg-dark-800 hover:border-dark-600'"
-          >
-            <input type="radio" v-model="form.gameType" :value="gt.value" class="sr-only" />
-            <span class="text-2xl">{{ gt.icon }}</span>
-            <span class="font-semibold text-sm" :class="form.gameType === gt.value ? 'text-primary-400' : 'text-white'">{{ gt.label }}</span>
-            <span class="text-xs text-dark-500">{{ gt.desc }}</span>
-            <svg v-if="form.gameType === gt.value"
-              class="absolute top-3 right-3 w-5 h-5 text-primary-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-            </svg>
-          </label>
+              ? 'bg-primary-600/20 text-primary-300 border border-primary-500/30 shadow-sm'
+              : 'text-dark-500 hover:text-dark-300 border border-transparent'">
+            {{ gt.icon }} {{ gt.label }}
+          </button>
         </div>
 
         <!-- 娱乐制参数 -->
@@ -106,30 +136,6 @@
               <option :value="480">8分钟</option>
               <option :value="600">10分钟（标准）</option>
               <option :value="720">12分钟</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <!-- 对阵球队 -->
-      <div class="card card-body space-y-4 animate-fade-in" style="animation-delay: 160ms">
-        <h2 class="font-semibold text-white flex items-center gap-2">
-          <span class="w-6 h-6 bg-primary-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
-          对阵球队（可选）
-        </h2>
-        <div class="grid sm:grid-cols-2 gap-4">
-          <div class="form-group">
-            <label class="label">主队</label>
-            <select v-model="form.homeTeamId" class="input">
-              <option value="">— 不设置 —</option>
-              <option v-for="t in teams" :key="t.id" :value="t.id">{{ t.name }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="label">客队</label>
-            <select v-model="form.awayTeamId" class="input">
-              <option value="">— 不设置 —</option>
-              <option v-for="t in teams" :key="t.id" :value="t.id" :disabled="t.id === form.homeTeamId">{{ t.name }}</option>
             </select>
           </div>
         </div>
@@ -187,7 +193,7 @@ const recorders = ref([])
 const loading = ref(false)
 const error = ref('')
 
-const steps = ['基本信息', '赛制', '对阵', '记录员']
+const steps = ['基本信息', '对阵', '赛制', '记录员']
 const currentStep = computed(() => {
   if (form.recorderIds.length > 0) return 3
   if (form.homeTeamId || form.awayTeamId) return 2
@@ -202,14 +208,15 @@ const form = reactive({
   quarterSeconds: 600,
   homeTeamId: '',
   awayTeamId: '',
-  scheduledAt: '',
+  date: '',
+  time: '',
   venue: '',
   recorderIds: []
 })
 
 const gameTypes = [
-  { value: 'entertainment', icon: '🎮', label: '120分娱乐制', desc: '先到目标分数获胜，适合友谊赛' },
-  { value: 'official', icon: '🏆', label: '正式标准制', desc: '按节计时，适合正式联赛' }
+  { value: 'entertainment', icon: '🎮', label: '娱乐制', desc: '先到目标分数获胜，适合友谊赛' },
+  { value: 'official', icon: '🏆', label: '正式制', desc: '按节计时，适合正式联赛' }
 ]
 
 onMounted(async () => {
@@ -224,6 +231,8 @@ onMounted(async () => {
 
 async function handleCreate() {
   if (!form.title.trim()) { error.value = '请填写赛事名称'; return }
+  if (!form.homeTeamId || !form.awayTeamId) { error.value = '请选择对阵球队'; return }
+  if (form.homeTeamId === form.awayTeamId) { error.value = '主队和客队不能相同'; return }
   error.value = ''
   loading.value = true
   try {
@@ -237,7 +246,7 @@ async function handleCreate() {
       p_quarter_seconds: form.gameType === 'official' ? form.quarterSeconds : null,
       p_quarter_clock: form.gameType === 'official' ? form.quarterSeconds : null,
       p_venue: form.venue || null,
-      p_scheduled_at: form.scheduledAt || null,
+      p_scheduled_at: (form.date && form.time) ? (form.date + 'T' + form.time + ':00') : null,
       p_notes: null
     })
     if (gameError) throw gameError
