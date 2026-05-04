@@ -282,15 +282,55 @@
                   <td class="px-2 py-2 text-center font-bold" :style="{ color: homeColor }">
                     {{ stat.player?.jersey_no || '-' }}
                   </td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('pts', stat, 'home') ? 'top-value' : 'text-dark-400'">{{ stat.pts }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('reb', stat, 'home') ? 'top-value' : 'text-dark-400'">{{ stat.reb }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('ast', stat, 'home') ? 'top-value' : 'text-dark-400'">{{ stat.ast }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('stl', stat, 'home') ? 'top-value' : 'text-dark-400'">{{ stat.stl }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('blk', stat, 'home') ? 'top-value' : 'text-dark-400'">{{ stat.blk }}</td>
-                  <td class="px-2 py-2 text-center" :class="stat.pf >= 5 ? 'text-danger font-bold' : stat.pf >= 3 ? 'text-warning font-semibold' : 'text-dark-500'">{{ stat.pf }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('fg_pct', stat, 'home') ? 'top-value' : 'text-dark-500'">{{ fgPct(stat) }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('fg3_pct', stat, 'home') ? 'top-value' : 'text-dark-500'">{{ fg3Pct(stat) }}</td>
-                  <td class="px-2 py-2 text-center text-dark-500">{{ stat.tov }}</td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('pts', stat, 'home') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].pts" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.pts }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('reb', stat, 'home') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].reb" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.reb }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('ast', stat, 'home') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].ast" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.ast }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('stl', stat, 'home') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].stl" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.stl }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('blk', stat, 'home') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].blk" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.blk }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (stat.pf >= 5 ? 'text-danger font-bold' : stat.pf >= 3 ? 'text-warning font-semibold' : 'text-dark-500')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].pf" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.pf }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="命中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="不中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <span v-else>{{ fgPct(stat) }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg3_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3m" type="number" min="0" placeholder="命中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3a" type="number" min="0" placeholder="不中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <span v-else>{{ fg3Pct(stat) }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center text-dark-500">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].tov" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.tov }}</span>
+                  </td>
                 </tr>
               </template>
 
@@ -326,15 +366,55 @@
                   <td class="px-2 py-2 text-center font-bold" :style="{ color: awayColor }">
                     {{ stat.player?.jersey_no || '-' }}
                   </td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('pts', stat, 'away') ? 'top-value' : 'text-dark-400'">{{ stat.pts }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('reb', stat, 'away') ? 'top-value' : 'text-dark-400'">{{ stat.reb }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('ast', stat, 'away') ? 'top-value' : 'text-dark-400'">{{ stat.ast }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('stl', stat, 'away') ? 'top-value' : 'text-dark-400'">{{ stat.stl }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('blk', stat, 'away') ? 'top-value' : 'text-dark-400'">{{ stat.blk }}</td>
-                  <td class="px-2 py-2 text-center" :class="stat.pf >= 5 ? 'text-danger font-bold' : stat.pf >= 3 ? 'text-warning font-semibold' : 'text-dark-500'">{{ stat.pf }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('fg_pct', stat, 'away') ? 'top-value' : 'text-dark-500'">{{ fgPct(stat) }}</td>
-                  <td class="px-2 py-2 text-center" :class="isTopInColForTeam('fg3_pct', stat, 'away') ? 'top-value' : 'text-dark-500'">{{ fg3Pct(stat) }}</td>
-                  <td class="px-2 py-2 text-center text-dark-500">{{ stat.tov }}</td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('pts', stat, 'away') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].pts" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.pts }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('reb', stat, 'away') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].reb" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.reb }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('ast', stat, 'away') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].ast" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.ast }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('stl', stat, 'away') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].stl" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.stl }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('blk', stat, 'away') ? 'top-value' : 'text-dark-400')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].blk" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.blk }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (stat.pf >= 5 ? 'text-danger font-bold' : stat.pf >= 3 ? 'text-warning font-semibold' : 'text-dark-500')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].pf" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.pf }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="命中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="不中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <span v-else>{{ fgPct(stat) }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg3_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3m" type="number" min="0" placeholder="命中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].fg3a" type="number" min="0" placeholder="不中"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white ml-0.5" />
+                    <span v-else>{{ fg3Pct(stat) }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center text-dark-500">
+                    <input v-if="editMode" v-model.number="editData[stat.player_id].tov" type="number" min="0"
+                      class="w-10 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-xs text-white" />
+                    <span v-else>{{ stat.tov }}</span>
+                  </td>
                 </tr>
               </template>
 
@@ -408,6 +488,57 @@ const stats = ref([])
 const mvp = ref([])
 const loading = ref(true)
 const loadError = ref('')
+
+const editMode = ref(false)
+const saving = ref(false)
+const editData = ref({})
+
+// ── 超管编辑功能 ──
+const statEditFields = ['pts', 'reb', 'ast', 'stl', 'blk', 'pf', 'tov', 'fgm', 'fga', 'fg3m', 'fg3a']
+
+function enterEditMode() {
+  editData.value = {}
+  for (const stat of stats.value) {
+    editData.value[stat.player_id] = {}
+    for (const f of statEditFields) {
+      editData.value[stat.player_id][f] = stat[f] || 0
+    }
+  }
+  editMode.value = true
+}
+
+function cancelEdit() {
+  editMode.value = false
+  editData.value = {}
+}
+
+async function saveEdits() {
+  saving.value = true
+  try {
+    for (const stat of stats.value) {
+      const d = editData.value[stat.player_id]
+      if (!d) continue
+      for (const f of statEditFields) {
+        const newVal = d[f] ?? 0
+        if (newVal !== (stat[f] || 0)) {
+          const { error } = await supabase.rpc('admin_set_game_stat', {
+            p_stat_id: stat.id,
+            p_field: f,
+            p_value: newVal
+          })
+          if (error) throw error
+        }
+      }
+    }
+    editMode.value = false
+    // 重新加载数据
+    router.go(0)
+  } catch (e) {
+    alert('保存失败：' + (e.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
 
 // 队伍颜色（带默认值）
 const homeColor = computed(() => game.value?.home_team?.color || '#3b82f6')
@@ -511,6 +642,58 @@ function isTopInColForTeam(col, stat, side) {
 
 function isMvpRow(stat) {
   return mvpWinner.value && stat.player_id === mvpWinner.value.player_id && game.value?.status === 'finished'
+}
+
+// ── 超管编辑数据模式 ──
+function enterEditMode() {
+  editData.value = {}
+  for (const s of stats.value) {
+    editData.value[s.player_id] = {
+      pts: s.pts || 0, reb: s.reb || 0, ast: s.ast || 0,
+      stl: s.stl || 0, blk: s.blk || 0, tov: s.tov || 0,
+      pf:  s.pf  || 0, fgm: s.fgm || 0, fga: s.fga || 0,
+      fg3m: s.fg3m || 0, fg3a: s.fg3a || 0,
+      ftm: s.ftm || 0, fta: s.fta || 0
+    }
+  }
+  editMode.value = true
+}
+
+function cancelEdit() {
+  editMode.value = false
+  editData.value = {}
+}
+
+async function saveEdits() {
+  saving.value = true
+  try {
+    for (const s of stats.value) {
+      const d = editData.value[s.player_id]
+      if (!d) continue
+      const fields = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta']
+      for (const f of fields) {
+        if ((s[f] || 0) !== d[f]) {
+          await supabase.rpc('admin_set_game_stat', {
+            p_game_id:    gameId,
+            p_player_id:  s.player_id,
+            p_stat_field: f,
+            p_stat_value: d[f]
+          })
+        }
+      }
+    }
+    editMode.value = false
+    // 重新加载数据
+    const { data: newStats } = await supabase
+      .from('game_stats')
+      .select(`*, player:player_id(id, name)`)
+      .eq('game_id', gameId)
+    if (newStats) stats.value = newStats
+  } catch (e) {
+    alert('保存失败：' + (e.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
 }
 
 // 删除功能
