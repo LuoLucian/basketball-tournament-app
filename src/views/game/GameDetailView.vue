@@ -644,58 +644,6 @@ function isMvpRow(stat) {
   return mvpWinner.value && stat.player_id === mvpWinner.value.player_id && game.value?.status === 'finished'
 }
 
-// ── 超管编辑数据模式 ──
-function enterEditMode() {
-  editData.value = {}
-  for (const s of stats.value) {
-    editData.value[s.player_id] = {
-      pts: s.pts || 0, reb: s.reb || 0, ast: s.ast || 0,
-      stl: s.stl || 0, blk: s.blk || 0, tov: s.tov || 0,
-      pf:  s.pf  || 0, fgm: s.fgm || 0, fga: s.fga || 0,
-      fg3m: s.fg3m || 0, fg3a: s.fg3a || 0,
-      ftm: s.ftm || 0, fta: s.fta || 0
-    }
-  }
-  editMode.value = true
-}
-
-function cancelEdit() {
-  editMode.value = false
-  editData.value = {}
-}
-
-async function saveEdits() {
-  saving.value = true
-  try {
-    for (const s of stats.value) {
-      const d = editData.value[s.player_id]
-      if (!d) continue
-      const fields = ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta']
-      for (const f of fields) {
-        if ((s[f] || 0) !== d[f]) {
-          await supabase.rpc('admin_set_game_stat', {
-            p_game_id:    gameId,
-            p_player_id:  s.player_id,
-            p_stat_field: f,
-            p_stat_value: d[f]
-          })
-        }
-      }
-    }
-    editMode.value = false
-    // 重新加载数据
-    const { data: newStats } = await supabase
-      .from('game_stats')
-      .select(`*, player:player_id(id, name)`)
-      .eq('game_id', gameId)
-    if (newStats) stats.value = newStats
-  } catch (e) {
-    alert('保存失败：' + (e.message || '未知错误'))
-  } finally {
-    saving.value = false
-  }
-}
-
 // 删除功能
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)

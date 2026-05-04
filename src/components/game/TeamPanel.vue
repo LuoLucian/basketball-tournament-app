@@ -277,6 +277,7 @@ async function moveToCourt(player) {
 }
 
 async function moveToBench(player) {
+  if (!canChangeLineup.value) return
   console.log('[TeamPanel] moveToBench called', player.name)
   const ok = await removePlayerFromLineup(player)
   console.log('[TeamPanel] removePlayerFromLineup result:', ok)
