@@ -13,6 +13,8 @@ export const useGameStore = defineStore('game', () => {
 
   // 加载赛事详情
   async function loadGame(gameId) {
+    // 清空上一场的操作栈
+    actionStack.value = []
     const { data, error } = await supabase
       .from('games')
       .select(`

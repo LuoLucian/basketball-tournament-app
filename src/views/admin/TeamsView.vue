@@ -34,6 +34,13 @@
             <p class="font-semibold text-white">{{ team.name }}</p>
             <p class="text-xs text-dark-500">{{ team.player_count || 0 }} 名成员</p>
           </div>
+          <!-- 管理员信息 -->
+          <div v-if="team.owner" class="flex items-center gap-1.5 text-[11px] text-dark-500 flex-shrink-0">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+            </svg>
+            <span>{{ team.owner.display_name || team.owner.username || '未知' }}</span>
+          </div>
           <!-- 管理按钮：超管全部显示，普通管理员只显示自己的 -->
           <button v-if="canManage(team)"
             @click.stop="toggleExpand(team)"
@@ -651,7 +658,7 @@ async function loadTeams() {
     // 先尝试带聚合的查询
     let { data, error } = await supabase
       .from('teams')
-      .select(`*, team_players(count)`)
+      .select(`*, team_players(count), owner:owner_id(username, display_name)`)
       .eq('is_active', true)
       .order('name')
     // 如果聚合查询失败，回退到简单查询
@@ -659,7 +666,7 @@ async function loadTeams() {
       console.warn('[TeamsView] 聚合查询失败，使用简单查询:', error.message)
       const res = await supabase
         .from('teams')
-        .select('*')
+        .select(`*, owner:owner_id(username, display_name)`)
         .eq('is_active', true)
         .order('name')
       data = res.data

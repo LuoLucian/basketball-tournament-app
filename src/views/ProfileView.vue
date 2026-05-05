@@ -66,6 +66,9 @@
 
     <!-- 退出 -->
     <button @click="handleSignOut" class="btn-danger w-full">退出登录</button>
+
+    <!-- 版本号 -->
+    <p class="text-center text-dark-600 text-[10px] mt-4">v{{ version }}</p>
   </div>
 </template>
 
@@ -74,6 +77,8 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getInitials, ROLE_LABELS } from '@/utils/helpers'
+
+const version = __APP_VERSION__
 
 const auth = useAuthStore()
 const router = useRouter()

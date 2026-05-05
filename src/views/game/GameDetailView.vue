@@ -237,9 +237,23 @@
       </div>
 
       <!-- ════════════════════════════════════════
+           Tab 切换：数据统计 / 教练视角
+           ════════════════════════════════════════ -->
+      <div class="flex gap-1 bg-dark-800 rounded-lg p-0.5 mb-4">
+        <button v-for="tab in detailTabs" :key="tab.key"
+          @click="activeTab = tab.key"
+          class="flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all duration-200"
+          :class="activeTab === tab.key
+            ? 'bg-primary-600/20 text-primary-300 shadow-sm'
+            : 'text-dark-500 hover:text-dark-300'">
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <!-- ════════════════════════════════════════
            球员数据统计表
            ════════════════════════════════════════ -->
-      <div class="card mb-4">
+      <div v-show="activeTab === 'stats'" class="card mb-4">
         <div class="card-header flex items-center justify-between">
           <h2 class="font-semibold text-white">球员数据</h2>
           <!-- 队伍切换 / 编辑模式按钮 -->
@@ -306,7 +320,8 @@
                 </tr>
                 <!-- 主队球员行 -->
                 <tr v-for="stat in getTeamStats('home')" :key="stat.player_id"
-                  class="hover:bg-dark-800/40 transition-colors text-xs">
+                  class="hover:bg-dark-800/40 transition-colors text-xs"
+                  :class="isOnCourt(stat.player_id) ? 'bg-green-500/[0.04]' : ''">
                   <!-- 球员信息（固定列） -->
                   <td class="sticky-player-info px-2 py-1.5">
                     <div class="flex items-center gap-1.5">
@@ -325,7 +340,12 @@
                           :class="isMvpRow(stat) ? 'text-yellow-200' : 'text-white'">
                           {{ stat.player_name || stat.player?.name }}
                         </span>
-                        <div class="flex items-center gap-1 leading-tight">
+                        <div class="flex items-center gap-1.5 leading-tight">
+                          <span v-if="isOnCourt(stat.player_id)"
+                                class="relative flex h-2 w-2 flex-shrink-0">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]"></span>
+                          </span>
                           <span v-if="stat.jersey_no || stat.player?.jersey_no"
                                 class="text-[9px] font-bold" :style="{ color: homeColor }">
                             #{{ stat.jersey_no || stat.player?.jersey_no }}
@@ -420,7 +440,8 @@
                 </tr>
                 <!-- 客队球员行 -->
                 <tr v-for="stat in getTeamStats('away')" :key="stat.player_id"
-                  class="hover:bg-dark-800/40 transition-colors text-xs">
+                  class="hover:bg-dark-800/40 transition-colors text-xs"
+                  :class="isOnCourt(stat.player_id) ? 'bg-green-500/[0.04]' : ''">
                   <!-- 球员信息（固定列） -->
                   <td class="sticky-player-info px-2 py-1.5">
                     <div class="flex items-center gap-1.5">
@@ -439,7 +460,12 @@
                           :class="isMvpRow(stat) ? 'text-yellow-200' : 'text-white'">
                           {{ stat.player_name || stat.player?.name }}
                         </span>
-                        <div class="flex items-center gap-1 leading-tight">
+                        <div class="flex items-center gap-1.5 leading-tight">
+                          <span v-if="isOnCourt(stat.player_id)"
+                                class="relative flex h-2 w-2 flex-shrink-0">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]"></span>
+                          </span>
                           <span v-if="stat.jersey_no || stat.player?.jersey_no"
                                 class="text-[9px] font-bold" :style="{ color: awayColor }">
                             #{{ stat.jersey_no || stat.player?.jersey_no }}
@@ -541,6 +567,293 @@
         </div>
       </div>
 
+      <!-- ════════════════════════════════════════
+           教练视角面板
+           ════════════════════════════════════════ -->
+      <div v-show="activeTab === 'coach'" class="space-y-4">
+        <!-- 队伍切换 -->
+        <div class="flex gap-1 bg-dark-800 rounded-lg p-0.5">
+          <button v-for="opt in coachTeamOptions" :key="opt.value"
+            @click="coachTeamFilter = opt.value"
+            class="flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all duration-200"
+            :class="coachTeamFilter === opt.value
+              ? 'bg-primary-600/20 text-primary-300 shadow-sm'
+              : 'text-dark-500 hover:text-dark-300'">
+            {{ opt.label }}
+          </button>
+        </div>
+
+        <!-- 加载中 -->
+        <div v-if="coachLoading" class="card p-8 text-center text-dark-500 text-sm">加载教练数据...</div>
+
+        <!-- 教练数据卡片 -->
+        <div v-else class="space-y-3">
+          <!-- 全部队伍模式：按队伍分组显示 -->
+          <template v-if="coachTeamFilter === 'all'">
+            <!-- 主队区域 -->
+            <div v-if="homeCoachPlayers.length > 0">
+              <div class="flex items-center gap-2 mb-2 px-1">
+                <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: homeColor }"></div>
+                <span class="text-[11px] font-bold" :style="{ color: homeColor }">{{ game.home_team?.name }}</span>
+                <span class="text-[10px] text-dark-600">主队 · {{ game.home_score }} 分</span>
+              </div>
+              <div class="space-y-3">
+          <div v-for="p in homeCoachPlayers" :key="p.player_id"
+            class="card p-3 border border-dark-700/50"
+            :class="isOnCourt(p.player_id) ? 'border-green-500/30 bg-green-500/5' : ''">
+            <div class="flex items-center gap-2.5 mb-2.5">
+              <div class="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden border border-dark-700/50"
+                :style="{ backgroundColor: (p.team_id === game?.home_team_id ? homeColor : awayColor) + '33' }">
+                <img v-if="p.avatar_url" :src="p.avatar_url" class="w-full h-full object-cover" alt="" />
+                <div v-else class="w-full h-full flex items-center justify-center text-[10px] font-bold"
+                  :style="{ color: p.team_id === game?.home_team_id ? homeColor : awayColor }">
+                  {{ (p.name || '?').charAt(0) }}
+                </div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-white truncate">{{ p.name }}</span>
+                  <span v-if="isOnCourt(p.player_id)"
+                    class="text-[8px] bg-green-500/20 text-green-400 px-1 rounded font-bold">场上</span>
+                </div>
+                <div class="flex items-center gap-2 text-[10px]">
+                  <span v-if="p.jersey_no" class="text-dark-500">#{{ p.jersey_no }}</span>
+                  <!-- 位置标签（可点击切换） -->
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-dark-700 text-dark-400 font-medium">{{ p.position }}</span>
+                  <!-- 上场时间醒目显示 -->
+                  <span class="bg-primary-500/15 text-primary-400 px-1.5 py-0.5 rounded font-bold text-[10px]">
+                    ⏱ {{ p.totalMinutes }}
+                  </span>
+                </div>
+              </div>
+              <!-- 评分 -->
+              <div class="text-right flex-shrink-0">
+                <p class="text-[9px] text-dark-500">效率评分</p>
+                <p class="text-lg font-black" :class="p.rating >= 15 ? 'text-green-400' : p.rating >= 8 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
+                  {{ p.rating > 0 ? '+' : '' }}{{ p.rating }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 全场数据 -->
+            <div class="grid grid-cols-7 gap-1 mb-2">
+              <div v-for="s in coachStatItems" :key="s.key" class="text-center">
+                <p class="text-[9px] text-dark-600">{{ s.label }}</p>
+                <p class="text-xs font-bold" :class="p[s.key] > 0 ? 'text-white' : 'text-dark-600'">{{ p[s.key] }}</p>
+              </div>
+            </div>
+
+            <!-- 上场阶段数据 -->
+            <div v-if="p.stints && p.stints.length > 0" class="border-t border-dark-700/30 pt-2">
+              <p class="text-[9px] text-dark-600 mb-1.5 font-semibold">上场阶段</p>
+              <div class="space-y-1">
+                <div v-for="s in p.stints" :key="s.stintIndex" class="flex items-center gap-2 text-[10px]">
+                  <span class="w-8 text-dark-500 font-medium flex-shrink-0">#{{ s.stintIndex }}</span>
+                  <select v-if="canViewCoachTab" @change="changeStintPosition(p.player_id, s.stintIndex, $event.target.value)"
+                    :value="s.stintPosition || p.position"
+                    class="bg-dark-700 text-dark-300 text-[9px] px-1 py-0 rounded border border-dark-600 cursor-pointer focus:outline-none focus:border-primary-500 w-10 flex-shrink-0">
+                    <option value="PG">PG</option>
+                    <option value="SG">SG</option>
+                    <option value="SF">SF</option>
+                    <option value="PF">PF</option>
+                    <option value="C">C</option>
+                    <option value="FLEX">FLEX</option>
+                  </select>
+                  <span v-else class="text-dark-500 w-10 flex-shrink-0">{{ s.stintPosition || p.position }}</span>
+                  <span class="text-primary-400 font-medium w-10 flex-shrink-0">{{ s.minutes }}</span>
+                  <div class="flex-1 flex gap-1.5">
+                    <span class="text-dark-400">{{ s.pts }}分</span>
+                    <span class="text-dark-500">{{ s.reb }}板</span>
+                    <span class="text-dark-500">{{ s.ast }}助</span>
+                    <span v-if="s.stl" class="text-dark-600">{{ s.stl }}断</span>
+                    <span v-if="s.blk" class="text-dark-600">{{ s.blk }}帽</span>
+                    <span v-if="s.tov" class="text-red-400/60">{{ s.tov }}误</span>
+                  </div>
+                  <span class="font-bold flex-shrink-0" :class="getRatingClass(s.rating)">
+                    {{ s.rating > 0 ? '+' : '' }}{{ s.rating }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+              </div>
+            </div>
+            <!-- 客队区域 -->
+            <div v-if="awayCoachPlayers.length > 0">
+              <div class="flex items-center gap-2 mb-2 px-1 mt-2">
+                <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: awayColor }"></div>
+                <span class="text-[11px] font-bold" :style="{ color: awayColor }">{{ game.away_team?.name }}</span>
+                <span class="text-[10px] text-dark-600">客队 · {{ game.away_score }} 分</span>
+              </div>
+              <div class="space-y-3">
+          <div v-for="p in awayCoachPlayers" :key="p.player_id"
+            class="card p-3 border border-dark-700/50"
+            :class="isOnCourt(p.player_id) ? 'border-green-500/30 bg-green-500/5' : ''">
+            <div class="flex items-center gap-2.5 mb-2.5">
+              <div class="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden border border-dark-700/50"
+                :style="{ backgroundColor: (p.team_id === game?.home_team_id ? homeColor : awayColor) + '33' }">
+                <img v-if="p.avatar_url" :src="p.avatar_url" class="w-full h-full object-cover" alt="" />
+                <div v-else class="w-full h-full flex items-center justify-center text-[10px] font-bold"
+                  :style="{ color: p.team_id === game?.home_team_id ? homeColor : awayColor }">
+                  {{ (p.name || '?').charAt(0) }}
+                </div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-white truncate">{{ p.name }}</span>
+                  <span v-if="isOnCourt(p.player_id)"
+                    class="text-[8px] bg-green-500/20 text-green-400 px-1 rounded font-bold">场上</span>
+                </div>
+                <div class="flex items-center gap-2 text-[10px]">
+                  <span v-if="p.jersey_no" class="text-dark-500">#{{ p.jersey_no }}</span>
+                  <!-- 位置标签（可点击切换） -->
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-dark-700 text-dark-400 font-medium">{{ p.position }}</span>
+                  <!-- 上场时间醒目显示 -->
+                  <span class="bg-primary-500/15 text-primary-400 px-1.5 py-0.5 rounded font-bold text-[10px]">
+                    ⏱ {{ p.totalMinutes }}
+                  </span>
+                </div>
+              </div>
+              <!-- 评分 -->
+              <div class="text-right flex-shrink-0">
+                <p class="text-[9px] text-dark-500">效率评分</p>
+                <p class="text-lg font-black" :class="p.rating >= 15 ? 'text-green-400' : p.rating >= 8 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
+                  {{ p.rating > 0 ? '+' : '' }}{{ p.rating }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 全场数据 -->
+            <div class="grid grid-cols-7 gap-1 mb-2">
+              <div v-for="s in coachStatItems" :key="s.key" class="text-center">
+                <p class="text-[9px] text-dark-600">{{ s.label }}</p>
+                <p class="text-xs font-bold" :class="p[s.key] > 0 ? 'text-white' : 'text-dark-600'">{{ p[s.key] }}</p>
+              </div>
+            </div>
+
+            <!-- 上场阶段数据 -->
+            <div v-if="p.stints && p.stints.length > 0" class="border-t border-dark-700/30 pt-2">
+              <p class="text-[9px] text-dark-600 mb-1.5 font-semibold">上场阶段</p>
+              <div class="space-y-1">
+                <div v-for="s in p.stints" :key="s.stintIndex" class="flex items-center gap-2 text-[10px]">
+                  <span class="w-8 text-dark-500 font-medium flex-shrink-0">#{{ s.stintIndex }}</span>
+                  <select v-if="canViewCoachTab" @change="changeStintPosition(p.player_id, s.stintIndex, $event.target.value)"
+                    :value="s.stintPosition || p.position"
+                    class="bg-dark-700 text-dark-300 text-[9px] px-1 py-0 rounded border border-dark-600 cursor-pointer focus:outline-none focus:border-primary-500 w-10 flex-shrink-0">
+                    <option value="PG">PG</option>
+                    <option value="SG">SG</option>
+                    <option value="SF">SF</option>
+                    <option value="PF">PF</option>
+                    <option value="C">C</option>
+                    <option value="FLEX">FLEX</option>
+                  </select>
+                  <span v-else class="text-dark-500 w-10 flex-shrink-0">{{ s.stintPosition || p.position }}</span>
+                  <span class="text-primary-400 font-medium w-10 flex-shrink-0">{{ s.minutes }}</span>
+                  <div class="flex-1 flex gap-1.5">
+                    <span class="text-dark-400">{{ s.pts }}分</span>
+                    <span class="text-dark-500">{{ s.reb }}板</span>
+                    <span class="text-dark-500">{{ s.ast }}助</span>
+                    <span v-if="s.stl" class="text-dark-600">{{ s.stl }}断</span>
+                    <span v-if="s.blk" class="text-dark-600">{{ s.blk }}帽</span>
+                    <span v-if="s.tov" class="text-red-400/60">{{ s.tov }}误</span>
+                  </div>
+                  <span class="font-bold flex-shrink-0" :class="getRatingClass(s.rating)">
+                    {{ s.rating > 0 ? '+' : '' }}{{ s.rating }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+              </div>
+            </div>
+            <div v-if="homeCoachPlayers.length === 0 && awayCoachPlayers.length === 0" class="card p-8 text-center text-dark-500 text-sm">暂无数据</div>
+          </template>
+
+          <!-- 单队模式 -->
+          <template v-else>
+          <div v-for="p in filteredCoachPlayers" :key="p.player_id"
+            class="card p-3 border border-dark-700/50"
+            :class="isOnCourt(p.player_id) ? 'border-green-500/30 bg-green-500/5' : ''">
+            <div class="flex items-center gap-2.5 mb-2.5">
+              <div class="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden border border-dark-700/50"
+                :style="{ backgroundColor: (p.team_id === game?.home_team_id ? homeColor : awayColor) + '33' }">
+                <img v-if="p.avatar_url" :src="p.avatar_url" class="w-full h-full object-cover" alt="" />
+                <div v-else class="w-full h-full flex items-center justify-center text-[10px] font-bold"
+                  :style="{ color: p.team_id === game?.home_team_id ? homeColor : awayColor }">
+                  {{ (p.name || '?').charAt(0) }}
+                </div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-bold text-white truncate">{{ p.name }}</span>
+                  <span v-if="isOnCourt(p.player_id)"
+                    class="text-[8px] bg-green-500/20 text-green-400 px-1 rounded font-bold">场上</span>
+                </div>
+                <div class="flex items-center gap-2 text-[10px]">
+                  <span v-if="p.jersey_no" class="text-dark-500">#{{ p.jersey_no }}</span>
+                  <!-- 位置标签（可点击切换） -->
+                  <span class="text-[9px] px-1.5 py-0.5 rounded bg-dark-700 text-dark-400 font-medium">{{ p.position }}</span>
+                  <!-- 上场时间醒目显示 -->
+                  <span class="bg-primary-500/15 text-primary-400 px-1.5 py-0.5 rounded font-bold text-[10px]">
+                    ⏱ {{ p.totalMinutes }}
+                  </span>
+                </div>
+              </div>
+              <!-- 评分 -->
+              <div class="text-right flex-shrink-0">
+                <p class="text-[9px] text-dark-500">效率评分</p>
+                <p class="text-lg font-black" :class="p.rating >= 15 ? 'text-green-400' : p.rating >= 8 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
+                  {{ p.rating > 0 ? '+' : '' }}{{ p.rating }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 全场数据 -->
+            <div class="grid grid-cols-7 gap-1 mb-2">
+              <div v-for="s in coachStatItems" :key="s.key" class="text-center">
+                <p class="text-[9px] text-dark-600">{{ s.label }}</p>
+                <p class="text-xs font-bold" :class="p[s.key] > 0 ? 'text-white' : 'text-dark-600'">{{ p[s.key] }}</p>
+              </div>
+            </div>
+
+            <!-- 上场阶段数据 -->
+            <div v-if="p.stints && p.stints.length > 0" class="border-t border-dark-700/30 pt-2">
+              <p class="text-[9px] text-dark-600 mb-1.5 font-semibold">上场阶段</p>
+              <div class="space-y-1">
+                <div v-for="s in p.stints" :key="s.stintIndex" class="flex items-center gap-2 text-[10px]">
+                  <span class="w-8 text-dark-500 font-medium flex-shrink-0">#{{ s.stintIndex }}</span>
+                  <select v-if="canViewCoachTab" @change="changeStintPosition(p.player_id, s.stintIndex, $event.target.value)"
+                    :value="s.stintPosition || p.position"
+                    class="bg-dark-700 text-dark-300 text-[9px] px-1 py-0 rounded border border-dark-600 cursor-pointer focus:outline-none focus:border-primary-500 w-10 flex-shrink-0">
+                    <option value="PG">PG</option>
+                    <option value="SG">SG</option>
+                    <option value="SF">SF</option>
+                    <option value="PF">PF</option>
+                    <option value="C">C</option>
+                    <option value="FLEX">FLEX</option>
+                  </select>
+                  <span v-else class="text-dark-500 w-10 flex-shrink-0">{{ s.stintPosition || p.position }}</span>
+                  <span class="text-primary-400 font-medium w-10 flex-shrink-0">{{ s.minutes }}</span>
+                  <div class="flex-1 flex gap-1.5">
+                    <span class="text-dark-400">{{ s.pts }}分</span>
+                    <span class="text-dark-500">{{ s.reb }}板</span>
+                    <span class="text-dark-500">{{ s.ast }}助</span>
+                    <span v-if="s.stl" class="text-dark-600">{{ s.stl }}断</span>
+                    <span v-if="s.blk" class="text-dark-600">{{ s.blk }}帽</span>
+                    <span v-if="s.tov" class="text-red-400/60">{{ s.tov }}误</span>
+                  </div>
+                  <span class="font-bold flex-shrink-0" :class="getRatingClass(s.rating)">
+                    {{ s.rating > 0 ? '+' : '' }}{{ s.rating }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+            <div v-if="filteredCoachPlayers.length === 0" class="card p-8 text-center text-dark-500 text-sm">暂无数据</div>
+          </template>
+        </div>
+      </div>
+
     </template>
 
     <!-- 删除确认弹窗 -->
@@ -573,7 +886,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { supabase } from '@/utils/supabase'
@@ -587,6 +900,12 @@ const gameId = route.params.id
 const game = ref(null)
 const stats = ref([])
 const mvp = ref([])
+const courtLineup = ref([])  // 当前场上阵容 [{player_id, team_id, slot_no, on_at}]
+const coachLoading = ref(false)
+const coachTeamFilter = ref('all')
+const coachPlayers = ref([])  // 教练视角球员数据
+const coachPositionOverrides = ref({})  // { [playerId]: position } 教练手动调整的位置
+const activeTab = ref('stats')
 const loading = ref(true)
 const loadError = ref('')
 
@@ -673,7 +992,59 @@ function getTeamStats(side) {
   return stats.value.filter(s => s.team_id === teamId)
 }
 
-const mvpWinner = computed(() => mvp.value.find(m => m.is_winner))
+// MVP PER 评分算法（与教练面板一致）
+const MVP_POSITION_WEIGHTS = {
+  PG:  { pts: 1.0, reb: 0.6, ast: 1.5, stl: 1.3, blk: 0.4, tov: -1.2, pf: -0.8, fga_miss: -0.7, fta_miss: -0.3 },
+  SG:  { pts: 1.2, reb: 0.7, ast: 1.1, stl: 1.1, blk: 0.5, tov: -1.0, pf: -0.8, fga_miss: -0.8, fta_miss: -0.3 },
+  SF:  { pts: 1.1, reb: 0.9, ast: 1.0, stl: 1.0, blk: 0.7, tov: -1.0, pf: -0.8, fga_miss: -0.8, fta_miss: -0.3 },
+  PF:  { pts: 1.0, reb: 1.3, ast: 0.7, stl: 0.8, blk: 1.0, tov: -0.9, pf: -0.9, fga_miss: -0.7, fta_miss: -0.4 },
+  C:   { pts: 1.0, reb: 1.5, ast: 0.5, stl: 0.6, blk: 1.4, tov: -0.8, pf: -1.0, fga_miss: -0.6, fta_miss: -0.5 },
+  FLEX:{ pts: 1.0, reb: 1.0, ast: 1.0, stl: 1.0, blk: 1.0, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 }
+}
+
+function calcMvpRating(s, pos) {
+  const w = MVP_POSITION_WEIGHTS[pos] || MVP_POSITION_WEIGHTS.FLEX
+  const fgaMiss = (s.fga || 0) - (s.fgm || 0)
+  const ftaMiss = (s.fta || 0) - (s.ftm || 0)
+  return Math.round((
+    (s.pts || 0) * w.pts +
+    (s.reb || 0) * w.reb +
+    (s.ast || 0) * w.ast +
+    (s.stl || 0) * w.stl +
+    (s.blk || 0) * w.blk +
+    (s.tov || 0) * w.tov +
+    (s.pf || 0) * w.pf +
+    fgaMiss * w.fga_miss +
+    ftaMiss * w.fta_miss
+  ) * 10) / 10
+}
+
+const mvpWinner = computed(() => {
+  if (!stats.value.length || game.value?.status !== 'finished') return null
+  // 确定胜方
+  const homeScore = game.value?.home_score || 0
+  const awayScore = game.value?.away_score || 0
+  let winningTeamId = null
+  if (homeScore > awayScore) winningTeamId = game.value?.home_team_id
+  else if (awayScore > homeScore) winningTeamId = game.value?.away_team_id
+  else return null // 平局没有MVP
+  
+  // 从胜方球员中选评分最高的
+  const winningStats = stats.value.filter(s => s.team_id === winningTeamId)
+  if (!winningStats.length) return null
+  
+  let best = null
+  let bestScore = -Infinity
+  for (const s of winningStats) {
+    const pos = s.player?.team_position || s.player_position || 'FLEX'
+    const score = calcMvpRating(s, pos)
+    if (score > bestScore) {
+      bestScore = score
+      best = { ...s, mvp_score: score, player: s.player }
+    }
+  }
+  return best
+})
 
 // MVP 对应的数据行
 const mvpStats = computed(() => {
@@ -749,6 +1120,613 @@ function isMvpRow(stat) {
   return mvpWinner.value && stat.player_id === mvpWinner.value.player_id && game.value?.status === 'finished'
 }
 
+// 判断球员是否当前在场上
+function isOnCourt(playerId) {
+  return courtLineup.value.some(l => l.player_id === playerId)
+}
+
+// Tab 配置
+const detailTabs = computed(() => {
+  const tabs = [{ key: 'stats', label: '📊 数据统计' }]
+  // 教练视角权限：super_admin 看全部，admin 看自己创建的球队
+  // 比赛进行中或已结束时均可查看（用于回顾总结）
+  if (['active', 'finished'].includes(game.value?.status) && auth.isLoggedIn && canViewCoachTab.value) {
+    tabs.push({ key: 'coach', label: '👔 教练视角' })
+  }
+  return tabs
+})
+
+// 教练视角权限判断
+const canViewCoachTab = computed(() => {
+  if (auth.role === 'super_admin') return true
+  if (auth.role === 'admin') {
+    const uid = auth.user?.id
+    if (!uid || !game.value) return false
+    const homeTeam = game.value.home_team || {}
+    const awayTeam = game.value.away_team || {}
+    // 兼容 owner_id 和 created_by 两种字段
+    return homeTeam.owner_id === uid || homeTeam.created_by === uid
+        || awayTeam.owner_id === uid || awayTeam.created_by === uid
+  }
+  return false
+})
+
+// 教练视角队伍筛选选项（超管可以看全部，管理员只看自己队伍不显示TAB）
+const coachTeamOptions = computed(() => {
+  if (!game.value) return []
+  const opts = []
+  // 球队管理员只有1个选项，不需要显示TAB
+  if (auth.role === 'admin') return opts
+  // 超管显示全部TAB
+  if (auth.role === 'super_admin') {
+    opts.push({ value: 'all', label: '全部' })
+  }
+  const uid = auth.user?.id
+  const isHomeOwner = game.value.home_team?.owner_id === uid || game.value.home_team?.created_by === uid
+  const isAwayOwner = game.value.away_team?.owner_id === uid || game.value.away_team?.created_by === uid
+  if (isHomeOwner || auth.role === 'super_admin') {
+    opts.push({ value: game.value.home_team_id, label: game.value.home_team?.name || '主队' })
+  }
+  if (isAwayOwner || auth.role === 'super_admin') {
+    opts.push({ value: game.value.away_team_id, label: game.value.away_team?.name || '客队' })
+  }
+  return opts
+})
+
+// 教练面板统计项
+const coachStatItems = [
+  { key: 'pts', label: '得分' },
+  { key: 'reb', label: '篮板' },
+  { key: 'ast', label: '助攻' },
+  { key: 'stl', label: '抢断' },
+  { key: 'blk', label: '盖帽' },
+  { key: 'tov', label: '失误' },
+  { key: 'pf', label: '犯规' }
+]
+
+// 按队伍分组的教练球员
+const homeCoachPlayers = computed(() => coachPlayers.value.filter(p => p.team_id === game.value?.home_team_id))
+const awayCoachPlayers = computed(() => coachPlayers.value.filter(p => p.team_id === game.value?.away_team_id))
+
+// 筛选后的教练球员
+const filteredCoachPlayers = computed(() => {
+  if (coachTeamFilter.value === 'all') return coachPlayers.value
+  return coachPlayers.value.filter(p => p.team_id === coachTeamFilter.value)
+})
+
+// 加载教练视角数据
+async function loadCoachData() {
+  if (!game.value) return
+  coachLoading.value = true
+  try {
+    // 获取所有阵容记录（含历史上下场记录）
+    const { data: allLineup, error: lErr } = await supabase
+      .from('game_lineup')
+      .select('player_id, team_id, slot_no, quarter, on_at, off_at')
+      .eq('game_id', gameId)
+      .order('on_at', { ascending: true })
+    if (lErr) throw lErr
+
+    // 获取所有 action_logs（按节分组统计）
+    const { data: actionLogs, error: aErr } = await supabase
+      .from('action_logs')
+      .select('player_id, team_id, action_type, delta, quarter, created_at')
+      .eq('game_id', gameId)
+      .eq('is_voided', false)
+    if (aErr) throw aErr
+
+    // 获取 game_stats（全场数据）
+    const { data: gameStats, error: sErr } = await supabase
+      .from('game_stats')
+      .select('player_id, team_id, pts, reb, ast, stl, blk, tov, pf, fgm, fga, fg3m, fg3a, ftm, fta')
+      .eq('game_id', gameId)
+    if (sErr) throw sErr
+
+    // 获取球员信息
+    const playerIds = [...new Set([
+      ...(allLineup || []).map(l => l.player_id),
+      ...(gameStats || []).map(s => s.player_id)
+    ])]
+    let playerMap = {}
+    if (playerIds.length > 0) {
+      const { data: players } = await supabase
+        .from('players')
+        .select('id, name, avatar_url')
+        .in('id', playerIds)
+      if (players) {
+        playerMap = Object.fromEntries(players.map(p => [p.id, p]))
+      }
+    }
+
+    // 获取球衣号码和位置
+    const teamIds = [game.value.home_team_id, game.value.away_team_id]
+    let jerseyMap = {}
+    let positionMap = {}
+    const { data: tpData } = await supabase
+      .from('team_players')
+      .select('player_id, team_id, jersey_no, position')
+      .in('team_id', teamIds)
+    if (tpData) {
+      jerseyMap = Object.fromEntries(tpData.map(t => [t.player_id, t]))
+      positionMap = Object.fromEntries(tpData.map(t => [t.player_id, t.position]))
+    }
+
+    // 计算每个球员的上场时间，并按上场阶段分组
+    const now = new Date()
+    const minutesMap = {}  // { [playerId]: { total: 秒, quarters: { [q]: 秒 } } }
+    const stintsMap = {}   // { [playerId]: [{ quarter, on_at, off_at, duration, team_id }] } 上场阶段
+
+    for (const l of (allLineup || [])) {
+      if (!minutesMap[l.player_id]) minutesMap[l.player_id] = { total: 0, quarters: {} }
+      if (!stintsMap[l.player_id]) stintsMap[l.player_id] = []
+      const m = minutesMap[l.player_id]
+      const start = new Date(l.on_at)
+      const end = l.off_at ? new Date(l.off_at) : now
+      const duration = Math.max(0, Math.floor((end - start) / 1000))  // 秒
+      m.total += duration
+
+      const q = l.quarter || 1
+      if (!m.quarters[q]) m.quarters[q] = 0
+      m.quarters[q] += duration
+
+      stintsMap[l.player_id].push({
+        quarter: q,
+        on_at: l.on_at,
+        off_at: l.off_at || null,
+        duration,
+        team_id: l.team_id
+      })
+    }
+
+    // 计算每个上场阶段中，该球员所在队伍和对方队伍的总得分变化
+    function calcTeamPointsInWindow(teamId, startAt, endAt) {
+      let pts = 0
+      for (const a of (actionLogs || [])) {
+        if (a.team_id !== teamId) continue
+        const t = new Date(a.created_at)
+        if (t >= startAt && t <= endAt) {
+          if (a.action_type === 'pts_1') pts += 1 * (a.delta || 1)
+          else if (a.action_type === 'pts_2') pts += 2 * (a.delta || 1)
+          else if (a.action_type === 'pts_3') pts += 3 * (a.delta || 1)
+        }
+      }
+      return pts
+    }
+
+    // 获取对方队伍 ID
+    const homeId = game.value?.home_team_id
+    const awayId = game.value?.away_team_id
+    function getOpponentTeamId(teamId) {
+      return teamId === homeId ? awayId : homeId
+    }
+
+    // 按 action_logs 的时间戳精确匹配到上场阶段
+    const stintStatsMap = {}
+    for (const pid of Object.keys(stintsMap)) {
+      stintStatsMap[pid] = stintsMap[pid].map(stint => ({
+        quarter: stint.quarter,
+        duration: stint.duration,
+        team_id: stint.team_id,
+        on_at: stint.on_at,
+        off_at: stint.off_at,
+        teamPointsGained: 0,      // 该阶段己方球队总得分
+        oppPointsGained: 0,       // 该阶段对方球队总得分
+        netEfficiency: 0,         // 净效率（己方 - 对方，每分钟）
+        beforeNetRate: 0,         // 上场前净得分速率（每分钟）
+        stats: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, fgm: 0, fga: 0, ftm: 0, fta: 0 }
+      }))
+    }
+
+    // 将 action_logs 分配到对应的上场阶段（按时间精确匹配）
+    for (const a of (actionLogs || [])) {
+      const stints = stintStatsMap[a.player_id]
+      if (!stints) continue
+      const actionTime = new Date(a.created_at)
+      const d = a.delta || 1
+      // 找到包含该 action 时间点的上场阶段
+      const stint = stints.find(s => {
+        const start = new Date(s.on_at)
+        const end = s.off_at ? new Date(s.off_at) : now
+        return actionTime >= start && actionTime <= end
+      })
+      if (!stint) continue
+      switch (a.action_type) {
+        case 'pts_1': stint.stats.pts += 1 * d; stint.stats.ftm += 1 * d; stint.stats.fta += 1 * d; break
+        case 'pts_2': stint.stats.pts += 2 * d; stint.stats.fgm += 1 * d; stint.stats.fga += 1 * d; break
+        case 'pts_3': stint.stats.pts += 3 * d; stint.stats.fgm += 1 * d; stint.stats.fga += 1 * d; break
+        case 'reb': stint.stats.reb += d; break
+        case 'ast': stint.stats.ast += d; break
+        case 'stl': stint.stats.stl += d; break
+        case 'blk': stint.stats.blk += d; break
+        case 'tov': stint.stats.tov += d; break
+        case 'pf': stint.stats.pf += d; break
+        case 'fga_miss': stint.stats.fga += d; break
+        case 'fta_miss': stint.stats.fta += d; break
+      }
+    }
+
+    // 计算每个阶段的己方得分、对方得分、净效率
+    for (const pid of Object.keys(stintStatsMap)) {
+      for (const stint of stintStatsMap[pid]) {
+        const startAt = new Date(stint.on_at)
+        const endAt = stint.off_at ? new Date(stint.off_at) : now
+        const oppTeamId = getOpponentTeamId(stint.team_id)
+
+        stint.teamPointsGained = calcTeamPointsInWindow(stint.team_id, startAt, endAt)
+        stint.oppPointsGained = calcTeamPointsInWindow(oppTeamId, startAt, endAt)
+
+        // 净效率：该阶段每分钟净得分（己方 - 对方）
+        const stintMins = Math.max(stint.duration / 60, 0.1)
+        stint.netEfficiency = Math.round(((stint.teamPointsGained - stint.oppPointsGained) / stintMins) * 10) / 10
+
+        // 上场前的净得分速率（往前推同样长的时间窗口）
+        const beforeEnd = new Date(stint.on_at)
+        const beforeStart = new Date(beforeEnd.getTime() - stint.duration * 1000)
+        // 如果上场前没有足够的历史数据，用比赛整体平均代替
+        const gameStart = game.value?.started_at ? new Date(game.value.started_at) : beforeStart
+        const effectiveBeforeStart = beforeStart < gameStart ? gameStart : beforeStart
+        const beforeWindowMs = beforeEnd.getTime() - effectiveBeforeStart.getTime()
+        if (beforeWindowMs > 0) {
+          const beforeOwnPts = calcTeamPointsInWindow(stint.team_id, effectiveBeforeStart, beforeEnd)
+          const beforeOppPts = calcTeamPointsInWindow(oppTeamId, effectiveBeforeStart, beforeEnd)
+          const beforeMins = Math.max(beforeWindowMs / 60000, 0.1)
+          stint.beforeNetRate = Math.round(((beforeOwnPts - beforeOppPts) / beforeMins) * 10) / 10
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 业余友好效率评分算法（Amateur-Friendly Context-Aware PER）
+    // ═══════════════════════════════════════════════════════════
+    // 核心思想：
+    // 1. 位置加权：不同位置有不同的核心贡献指标
+    // 2. 上下文感知：球员贡献占球队得分比例越高，效率越高
+    // 3. 无效上场惩罚：球队得分多但球员无贡献 → 轻微扣分
+    // 4. 时间补偿：上场时间越长，维持高效率越难，给予适当补偿
+    // 5. 业余友好：基础分底薪 + 降低惩罚力度 + 放宽贡献阈值
+
+    const POSITION_WEIGHTS = {
+      PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -0.6, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 },
+      SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
+      SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
+      PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -0.5, pf: -0.5, fga_miss: -0.4, fta_miss: -0.3 },
+      C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.4, pf: -0.5, fga_miss: -0.3, fta_miss: -0.3 },
+      FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -0.5, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 }
+    }
+
+    // 位置核心指标（用于计算"位置贡献度"）
+    const POSITION_FOCUS = {
+      PG:  { offense: 'ast', defense: 'stl' },
+      SG:  { offense: 'pts', defense: 'stl' },
+      SF:  { offense: 'pts', defense: 'reb' },
+      PF:  { offense: 'reb', defense: 'blk' },
+      C:   { offense: 'reb', defense: 'blk' },
+      FLEX:{ offense: 'pts', defense: 'reb' }
+    }
+
+    function calcRating(s, pos, minutes, teamPointsGained, oppPointsGained, netEfficiency, beforeNetRate) {
+      const w = POSITION_WEIGHTS[pos] || POSITION_WEIGHTS.FLEX
+      const fgaMiss = (s.fga || 0) - (s.fgm || 0)
+      const ftaMiss = (s.fta || 0) - (s.ftm || 0)
+
+      // 第一步：基础加权分数（个人表现）
+      const rawScore =
+        (s.pts || 0) * w.pts +
+        (s.reb || 0) * w.reb +
+        (s.ast || 0) * w.ast +
+        (s.stl || 0) * w.stl +
+        (s.blk || 0) * w.blk +
+        (s.tov || 0) * w.tov +
+        (s.pf || 0) * w.pf +
+        fgaMiss * w.fga_miss +
+        ftaMiss * w.fta_miss
+
+      if (minutes && minutes > 0) {
+        // 第二步：上下文感知调整（业余友好版）
+        let contextBonus = 0
+
+        if (teamPointsGained > 0) {
+          // 球员得分占球队得分比例（贡献度）
+          const contributionRatio = Math.min((s.pts || 0) / teamPointsGained, 1)
+          // 业余比赛得分更分散，降低阈值
+          if (contributionRatio >= 0.20) {
+            contextBonus = 1.5  // 核心贡献者
+          } else if (contributionRatio >= 0.10) {
+            contextBonus = 0.5  // 正常贡献
+          } else if (contributionRatio > 0) {
+            contextBonus = -0.3  // 贡献偏低（轻微）
+          } else {
+            contextBonus = -1.0  // 零贡献（降低惩罚）
+          }
+
+          // 位置特色奖励（降低门槛）
+          const focus = POSITION_FOCUS[pos] || POSITION_FOCUS.FLEX
+          const offVal = s[focus.offense] || 0
+          const defVal = s[focus.defense] || 0
+          const offPerMin = offVal / minutes
+          const defPerMin = defVal / minutes
+          if (offPerMin >= 0.5) contextBonus += 0.8   // 降低门槛
+          if (defPerMin >= 0.3) contextBonus += 0.5   // 降低门槛
+        } else {
+          // 球队没有得分变化
+          const defFocus = POSITION_FOCUS[pos]?.defense || 'reb'
+          const defVal = s[defFocus] || 0
+          if (defVal > 0) {
+            contextBonus = 0.3  // 防守端有贡献
+          } else if (minutes >= 3) {
+            contextBonus = -0.8  // 降低惩罚，提高时间门槛
+          }
+        }
+
+        // 第三步：净效率奖励/惩罚（对比上场前后，降低幅度）
+        let impactBonus = 0
+        const netEff = netEfficiency || 0
+        const beforeNet = beforeNetRate || 0
+        const netImprovement = netEff - beforeNet
+
+        if (netEff > 0) {
+          impactBonus += 1.0  // 基础奖励（降低）
+          if (netImprovement > 0) {
+            impactBonus += Math.min(netImprovement * 0.3, 1.5)  // 降低系数和上限
+          }
+        } else if (netEff < 0) {
+          if (netImprovement < 0) {
+            impactBonus -= Math.min(Math.abs(netImprovement) * 0.3, 1.0)  // 降低惩罚
+          }
+          if ((oppPointsGained || 0) > (teamPointsGained || 0) * 1.5) {
+            impactBonus -= 0.5  // 降低惩罚
+          }
+        }
+
+        // 防守型位置（PF/C）额外防守奖励
+        if (['PF', 'C'].includes(pos)) {
+          if ((oppPointsGained || 0) === 0 && minutes >= 2) {
+            impactBonus += 1.0  // 降低
+          }
+          const defActions = (s.blk || 0) + (s.stl || 0)
+          if (defActions >= 1 && netEff >= 0) {  // 降低门槛：1次就够了
+            impactBonus += 0.8
+          }
+        }
+
+        // 第四步：时间补偿
+        let timeModifier = 1.0
+        if (minutes <= 2) timeModifier = 1.4
+        else if (minutes <= 5) timeModifier = 1.2
+        else if (minutes >= 15) timeModifier = 0.95
+
+        // 第五步：业余友好底薪（有贡献才给底薪，零贡献不给）
+        let baseScore = 0
+        const hasContribution = (s.pts || 0) > 0 || (s.reb || 0) > 0 || (s.ast || 0) > 0
+          || (s.stl || 0) > 0 || (s.blk || 0) > 0
+        if (hasContribution) {
+          baseScore = 0.5 * minutes  // 每分钟 +0.5 底薪（降低）
+        }
+
+        const finalScore = (rawScore + contextBonus + impactBonus + baseScore) * timeModifier
+        return Math.round((finalScore / minutes) * 10) / 10
+      }
+
+      return Math.round(rawScore * 10) / 10
+    }
+
+    // 组装教练面板数据
+    const allPlayerIds = [...new Set([
+      ...(allLineup || []).map(l => l.player_id),
+      ...(gameStats || []).map(s => s.player_id)
+    ])]
+
+    coachPlayers.value = allPlayerIds.map(pid => {
+      const pInfo = playerMap[pid] || {}
+      const jInfo = jerseyMap[pid] || {}
+      const gs = (gameStats || []).find(s => s.player_id === pid) || {}
+      const mins = minutesMap[pid] || { total: 0, quarters: {} }
+      const stints = stintStatsMap[pid] || []
+
+      // 计算总上场分钟数
+      const totalMins = Math.ceil(mins.total / 60)
+      // 优先使用教练手动调整的位置
+      const pos = coachPositionOverrides.value[pid] || positionMap[pid] || 'FLEX'
+
+      // 按上场阶段计算评分
+      const playerLineupData = (allLineup || []).filter(l => l.player_id === pid)
+      const stintsData = stints.map((stint, idx) => {
+        const stintMins = Math.ceil(stint.duration / 60) || 1
+        // 找到对应的 lineup 记录（用于实时更新时间）
+        const lineupEntry = playerLineupData.find(l => {
+          return new Date(l.on_at).getTime() === new Date(stint.on_at).getTime()
+        })
+        return {
+          stintIndex: idx + 1,
+          quarter: stint.quarter,
+          minutes: formatSeconds(stint.duration),
+          ...stint.stats,
+          rating: calcRating(stint.stats, pos, stintMins, stint.teamPointsGained, stint.oppPointsGained, stint.netEfficiency, stint.beforeNetRate),
+          _lineupEntry: lineupEntry || null  // 保存引用用于定时器更新
+        }
+      })
+
+      return {
+        player_id: pid,
+        team_id: (allLineup || []).find(l => l.player_id === pid)?.team_id
+          || gs.team_id,
+        name: pInfo.name || '未知',
+        avatar_url: pInfo.avatar_url,
+        jersey_no: jInfo.jersey_no,
+        position: pos,
+        totalMinutes: formatSeconds(mins.total),
+        _lineupData: playerLineupData,  // 保存引用用于定时器更新
+        pts: gs.pts || 0,
+        reb: gs.reb || 0,
+        ast: gs.ast || 0,
+        stl: gs.stl || 0,
+        blk: gs.blk || 0,
+        tov: gs.tov || 0,
+        pf: gs.pf || 0,
+        // 全场评分：用该球员所有阶段的汇总数据
+        rating: calcRating(gs, pos, totalMins,
+          stints.reduce((sum, s) => sum + (s.teamPointsGained || 0), 0),
+          stints.reduce((sum, s) => sum + (s.oppPointsGained || 0), 0),
+          stints.length > 0 ? stints.reduce((sum, s) => sum + (s.netEfficiency || 0), 0) / stints.length : 0,
+          stints.length > 0 ? stints[0].beforeNetRate || 0 : 0
+        ),
+        stints: stintsData
+      }
+    }).sort((a, b) => b.rating - a.rating)  // 按评分排序
+  } catch (e) {
+    console.error('加载教练数据失败:', e)
+  } finally {
+    coachLoading.value = false
+  }
+}
+
+// 教练手动切换某个上场阶段的位置，只重算该阶段评分
+function changeStintPosition(playerId, stintIndex, newPosition) {
+  const player = coachPlayers.value.find(p => p.player_id === playerId)
+  if (!player) return
+  const stint = (player.stints || []).find(s => s.stintIndex === stintIndex)
+  if (!stint) return
+
+  // 记录该阶段的位置覆盖
+  stint.stintPosition = newPosition
+
+  // 用新位置重算该阶段评分（使用业余友好权重）
+  const POSITION_WEIGHTS = {
+    PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -0.6, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 },
+    SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
+    SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
+    PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -0.5, pf: -0.5, fga_miss: -0.4, fta_miss: -0.3 },
+    C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.4, pf: -0.5, fga_miss: -0.3, fta_miss: -0.3 },
+    FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -0.5, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 }
+  }
+  const w = POSITION_WEIGHTS[newPosition] || POSITION_WEIGHTS.FLEX
+  const stintMins = Math.ceil(parseInt(stint.minutes) / 60) || 1
+  const fgaMiss = (stint.fga || 0) - (stint.fgm || 0)
+  const ftaMiss = (stint.fta || 0) - (stint.ftm || 0)
+  const raw = (stint.pts||0)*w.pts + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
+  stint.rating = Math.round((raw / stintMins) * 10) / 10
+
+  // 重算全场评分（所有阶段评分的平均值）
+  const allStints = player.stints || []
+  player.rating = allStints.length > 0
+    ? Math.round(allStints.reduce((sum, s) => sum + s.rating, 0) / allStints.length * 10) / 10
+    : 0
+
+  // 重新排序
+  coachPlayers.value.sort((a, b) => b.rating - a.rating)
+}
+
+// 格式化秒数为 mm:ss
+function getRatingClass(rating) {
+  if (rating >= 15) return 'text-green-400'
+  if (rating >= 8) return 'text-yellow-400'
+  if (rating >= 0) return 'text-dark-300'
+  return 'text-red-400'
+}
+
+function formatSeconds(totalSec) {
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+// watch tab 切换，加载教练数据
+watch(activeTab, (val) => {
+  if (val === 'coach') {
+    // 管理员默认只看自己的队伍
+    if (auth.role === 'admin') {
+      const uid = auth.user?.id
+      if (game.value?.home_team?.owner_id === uid || game.value?.home_team?.created_by === uid) coachTeamFilter.value = game.value.home_team_id
+      else if (game.value?.away_team?.owner_id === uid || game.value?.away_team?.created_by === uid) coachTeamFilter.value = game.value.away_team_id
+    } else {
+      coachTeamFilter.value = 'all'
+    }
+    loadCoachData()
+    // 只有比赛进行中且未暂停才启动定时器，结束后或暂停时数据不变
+    if (game.value?.status === 'active' && !game.value.is_paused) {
+      startCoachTimer()
+    }
+  } else {
+    stopCoachTimer()
+  }
+})
+
+// 教练页定时器：实时更新上场时间 + 重算评分
+let coachTimer = null
+// 简化版评分函数（供定时器使用，与 changeStintPosition 一致）
+const TIMER_POSITION_WEIGHTS = {
+  PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -0.6, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 },
+  SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
+  SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
+  PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -0.5, pf: -0.5, fga_miss: -0.4, fta_miss: -0.3 },
+  C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.4, pf: -0.5, fga_miss: -0.3, fta_miss: -0.3 },
+  FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -0.5, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 }
+}
+
+function quickRecalcStintRating(stint, pos) {
+  const w = TIMER_POSITION_WEIGHTS[pos] || TIMER_POSITION_WEIGHTS.FLEX
+  // 解析时间 mm:ss → 分钟数
+  const parts = (stint.minutes || '0:00').split(':')
+  const stintMins = parseInt(parts[0]) * 60 + parseInt(parts[1] || 0)
+  const mins = Math.max(Math.ceil(stintMins / 60), 1)
+  const fgaMiss = (stint.fga || 0) - (stint.fgm || 0)
+  const ftaMiss = (stint.fta || 0) - (stint.ftm || 0)
+  const raw = (stint.pts||0)*w.pts + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
+  // 有贡献才给底薪
+  const hasContribution = (stint.pts||0) > 0 || (stint.reb||0) > 0 || (stint.ast||0) > 0 || (stint.stl||0) > 0 || (stint.blk||0) > 0
+  const baseScore = hasContribution ? 0.5 * mins : 0
+  let timeModifier = 1.0
+  if (mins <= 2) timeModifier = 1.4
+  else if (mins <= 5) timeModifier = 1.2
+  else if (mins >= 15) timeModifier = 0.95
+  const finalScore = (raw + baseScore) * timeModifier
+  stint.rating = Math.round((finalScore / mins) * 10) / 10
+}
+
+function startCoachTimer() {
+  stopCoachTimer()
+  coachTimer = setInterval(() => {
+    if (coachPlayers.value.length === 0) return
+    const now = new Date()
+    for (const player of coachPlayers.value) {
+      if (!player._lineupData) continue
+      let totalSec = 0
+      for (const l of player._lineupData) {
+        const start = new Date(l.on_at)
+        const end = l.off_at ? new Date(l.off_at) : now
+        totalSec += Math.max(0, Math.floor((end - start) / 1000))
+      }
+      player.totalMinutes = formatSeconds(totalSec)
+      // 更新每个阶段的时间并重算评分
+      for (const stint of (player.stints || [])) {
+        if (stint._lineupEntry) {
+          const s = new Date(stint._lineupEntry.on_at)
+          const e = stint._lineupEntry.off_at ? new Date(stint._lineupEntry.off_at) : now
+          stint.minutes = formatSeconds(Math.max(0, Math.floor((e - s) / 1000)))
+          // 用该阶段的位置重算评分
+          const pos = stint.stintPosition || player.position || 'FLEX'
+          quickRecalcStintRating(stint, pos)
+        }
+      }
+      // 重算全场评分
+      const allStints = player.stints || []
+      player.rating = allStints.length > 0
+        ? Math.round(allStints.reduce((sum, s) => sum + s.rating, 0) / allStints.length * 10) / 10
+        : 0
+    }
+    // 重新排序
+    coachPlayers.value.sort((a, b) => b.rating - a.rating)
+  }, 10000)
+}
+function stopCoachTimer() {
+  if (coachTimer) { clearInterval(coachTimer); coachTimer = null }
+}
+
+// 组件卸载时清理定时器
+onUnmounted(() => {
+  stopCoachTimer()
+})
+
 // 删除功能
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)
@@ -789,8 +1767,8 @@ onMounted(async () => {
     game.value = gameData
     loading.value = false
 
-    // 并行获取：两队所有球员 + 本场统计数据 + MVP
-    const [tpRes, statsRes, mvpQuery] = await Promise.allSettled([
+    // 并行获取：两队所有球员 + 本场统计数据 + MVP + 当前场上阵容
+    const [tpRes, statsRes, mvpQuery, lineupRes] = await Promise.allSettled([
       supabase.from('team_players')
         .select(`team_id, player_id, jersey_no, position, player:player_id(id, name)`)
         .in('team_id', [gameData.home_team_id, gameData.away_team_id])
@@ -800,8 +1778,17 @@ onMounted(async () => {
         .eq('game_id', gameId),
       supabase.from('game_mvp')
         .select('*, player:player_id(id, name)')
+        .eq('game_id', gameId),
+      supabase.from('game_lineup')
+        .select('player_id, team_id, slot_no, on_at')
         .eq('game_id', gameId)
+        .eq('is_current', true)
     ])
+
+    // 当前场上阵容
+    if (lineupRes.status === 'fulfilled' && lineupRes.value.data) {
+      courtLineup.value = lineupRes.value.data
+    }
 
     // 统计数据的 map，方便按 player_id 查找
     const statsMap = {}

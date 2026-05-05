@@ -89,10 +89,29 @@
           {{ ending ? '结束中...' : '结束' }}
         </button>
 
+        <!-- 暂停/继续 -->
+        <button v-if="gameStore.currentGame.status === 'active'" @click="togglePause"
+          class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
+          :class="isPaused ? 'bg-yellow-600 text-white' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'">
+          {{ isPaused ? '▶ 继续' : '⏸ 暂停' }}
+        </button>
+
+        <!-- 本节结束（仅正式制） -->
+        <button v-if="gameStore.currentGame.status === 'active' && gameStore.currentGame.game_type !== 'entertainment'" @click="endQuarter"
+          :disabled="!canManageGame || isPaused"
+          class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
+          :class="isPaused ? 'bg-dark-800 text-dark-600 cursor-not-allowed' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'">
+          本节结束
+        </button>
+
         <div class="flex-1"></div>
 
         <!-- 状态 -->
-        <div v-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[10px] flex-shrink-0">
+        <div v-if="isPaused" class="flex items-center gap-1 text-yellow-400 text-[10px] flex-shrink-0">
+          <span class="w-1 h-1 rounded-full bg-yellow-400"></span>
+          已暂停
+        </div>
+        <div v-else-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[10px] flex-shrink-0">
           <span class="w-1 h-1 rounded-full bg-green-400 animate-pulse"></span>
           LIVE
         </div>
@@ -113,6 +132,7 @@
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
           :readonly="!canRecord"
+          :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
@@ -133,6 +153,7 @@
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
           :readonly="!canRecord"
+          :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
@@ -194,7 +215,10 @@ const isTeamAdmin = computed(() => {
     || gameStore.currentGame.away_team?.owner_id === uid
 })
 
+const isPaused = ref(false)
+
 const canRecord = computed(() => {
+  if (isPaused.value) return false
   if (!gameStore.currentGame) return false
   if (['finished', 'cancelled'].includes(gameStore.currentGame.status)) return false
   const uid = auth.user?.id
@@ -212,9 +236,21 @@ const canManageGame = computed(() => {
   return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value || isAssigned
 })
 
+// 阵容调整权限（不受暂停影响）
+const canManageLineup = computed(() => {
+  if (!gameStore.currentGame) return false
+  if (['finished', 'cancelled'].includes(gameStore.currentGame.status)) return false
+  const uid = auth.user?.id
+  if (!uid) return false
+  const isAssigned = assignedRecorders.value.some(r => r.recorder_id === uid)
+  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value || isAssigned
+})
+
 const assignedRecorders = ref([])
 
 onMounted(async () => {
+  // 确保清空上一场比赛的操作栈
+  gameStore.actionStack = []
   try {
     await gameStore.loadGame(gameId)
     gameStore.subscribeRealtime(gameId)
@@ -249,14 +285,8 @@ async function handleRecord({ playerId, teamId, actionType, playerName }) {
 
 // 阵容变化回调（拖拽换人后由 TeamPanel 内部处理数据库，这里只同步 slot_no）
 async function handleLineupChange(newLineup) {
-  for (let i = 0; i < newLineup.length; i++) {
-    const item = newLineup[i]
-    if (item._lineupId) {
-      await supabase.from('game_lineup').update({ slot_no: i + 1 }).eq('id', item._lineupId)
-    }
-  }
-  // 刷新 store 中的 lineup
-  await gameStore.loadLineup(gameId)
+  // swap_player RPC 已经处理了数据库写入，不需要再 update slot_no
+  // 也不需要 loadLineup，避免覆盖 TeamPanel 的乐观更新
 }
 
 async function startGame() {
@@ -290,7 +320,6 @@ async function endGame() {
     if (error) throw error
     showToast('比赛已结束')
     await gameStore.loadGame(gameId)
-    // 比赛结束前先快照所有参赛球员数据
     await supabase.rpc('snapshot_game_players', { p_game_id: gameId })
     await calcMvp()
   } catch (e) {
@@ -298,6 +327,16 @@ async function endGame() {
   } finally {
     ending.value = false
   }
+}
+
+function togglePause() {
+  isPaused.value = !isPaused.value
+  showToast(isPaused.value ? '⏸ 比赛已暂停' : '▶ 比赛继续')
+}
+
+function endQuarter() {
+  if (!confirm('确认结束本节？将暂停录入。')) return
+  isPaused.value = true
 }
 
 async function calcMvp() {

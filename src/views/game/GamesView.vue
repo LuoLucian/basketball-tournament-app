@@ -51,9 +51,9 @@
     </div>
     <div v-else class="space-y-3">
       <div v-for="game in filteredGames" :key="game.id" class="group relative">
-        <router-link :to="`/games/${game.id}`"
+        <div @click="$router.push(`/games/${game.id}`)"
           class="card card-body flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-3
-                 hover:border-primary-600/30 hover:shadow-neon-blue transition-all duration-300"
+                 hover:border-primary-600/30 hover:shadow-neon-blue transition-all duration-300 cursor-pointer"
         >
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-2 flex-wrap">
@@ -81,9 +81,9 @@
             <p v-if="game.scheduled_at" class="text-xs text-dark-500 mt-1.5">{{ fmtDateTime(game.scheduled_at) }}</p>
           </div>
           <div class="flex gap-1.5 items-center sm:flex-shrink-0 sm:justify-end self-end">
-            <router-link v-if="canRecord(game)" :to="`/games/${game.id}/record`"
-              class="btn-primary btn-sm" @click.stop
-            >录入</router-link>
+            <button v-if="canRecord(game)" @click.stop="$router.push(`/games/${game.id}/record`)"
+              class="btn-primary btn-sm"
+            >录入</button>
             <button v-if="auth.isSuperAdmin"
               @click.stop="confirmDelete(game)"
               class="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-dark-500
@@ -100,7 +100,7 @@
               </svg>
             </span>
           </div>
-        </router-link>
+        </div>
       </div>
     </div>
   </div>

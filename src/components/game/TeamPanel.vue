@@ -15,52 +15,54 @@
     <div class="px-2 pt-2 pb-1">
       <div class="flex items-center justify-between px-1 mb-1.5">
         <p class="text-[11px] text-dark-400 font-semibold uppercase tracking-wider">
-          上场阵容 · {{ courtPlayers.length }}/5
+          上场阵容 · {{ courtPlayers.filter(p => p).length }}/5
         </p>
       </div>
       <div class="space-y-1.5">
-        <!-- 上场球员卡片 -->
-        <div v-for="(player, index) in courtPlayers" :key="'c-'+player.id"
-             class="flex items-center gap-2 rounded-xl px-2.5 py-2 border transition-all cursor-pointer select-none"
-             :class="selectedPlayer?.id === player.id
-               ? 'bg-primary-600/15 border-primary-500/60 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
-               : 'bg-dark-800 border-dark-700/50 hover:border-dark-600'"
-             @click="selectPlayer(player)">
-          <!-- 头像 -->
-          <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white overflow-hidden"
-               :style="{ backgroundColor: team?.color || '#334155' }">
-            <img v-if="player.avatar_url" :src="player.avatar_url" class="w-full h-full object-cover" alt="">
-            <span v-else>{{ player.name?.charAt(0) || '?' }}</span>
+        <!-- 上场球员卡片 / 空位 -->
+        <template v-for="(slot, index) in courtPlayers" :key="'s-'+index">
+          <!-- 有球员 -->
+          <div v-if="slot"
+               class="flex items-center gap-2 rounded-xl px-2.5 py-2 border transition-all cursor-pointer select-none"
+               :class="selectedPlayer?.id === slot.id
+                 ? 'bg-primary-600/15 border-primary-500/60 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+                 : 'bg-dark-800 border-dark-700/50 hover:border-dark-600'"
+               @click="selectPlayer(slot)">
+            <!-- 头像 -->
+            <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white overflow-hidden"
+                 :style="{ backgroundColor: team?.color || '#334155' }">
+              <img v-if="slot.avatar_url" :src="slot.avatar_url" class="w-full h-full object-cover" alt="">
+              <span v-else>{{ slot.name?.charAt(0) || '?' }}</span>
+            </div>
+            <!-- 信息 -->
+            <div class="flex-1 min-w-0">
+              <p class="text-[12px] text-white font-medium truncate leading-tight">
+                <span v-if="slot.jersey_no" class="text-dark-400 mr-1">#{{ slot.jersey_no }}</span>{{ slot.name }}
+              </p>
+              <p v-if="slot.position" class="text-[10px] text-dark-500 mt-0.5">{{ slot.position }}</p>
+            </div>
+            <!-- 选中和下场 -->
+            <div class="flex items-center gap-1 flex-shrink-0">
+              <span v-if="selectedPlayer?.id === slot.id"
+                    class="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></span>
+              <button @click.stop="moveToBench(slot)"
+                      class="px-2 py-1 rounded-lg text-[10px] font-medium text-dark-500
+                             hover:text-danger hover:bg-danger/10 border border-transparent
+                             hover:border-danger/30 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                      :disabled="!canChangeLineup">
+                下场
+              </button>
+            </div>
           </div>
-          <!-- 信息 -->
-          <div class="flex-1 min-w-0">
-            <p class="text-[12px] text-white font-medium truncate leading-tight">
-              <span v-if="player.jersey_no" class="text-dark-400 mr-1">#{{ player.jersey_no }}</span>{{ player.name }}
-            </p>
-            <p v-if="player.position" class="text-[10px] text-dark-500 mt-0.5">{{ player.position }}</p>
+          <!-- 空位 -->
+          <div v-else
+               class="flex items-center gap-2 rounded-xl px-2.5 py-2 border border-dashed border-dark-700/30">
+            <div class="w-8 h-8 rounded-lg bg-dark-800 flex items-center justify-center">
+              <span class="text-[10px] text-dark-600">{{ index + 1 }}</span>
+            </div>
+            <span class="text-[11px] text-dark-700">空位</span>
           </div>
-          <!-- 选中和下场 -->
-          <div class="flex items-center gap-1 flex-shrink-0">
-            <span v-if="selectedPlayer?.id === player.id"
-                  class="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></span>
-            <button @click.stop="moveToBench(player)"
-                    class="px-2 py-1 rounded-lg text-[10px] font-medium text-dark-500
-                           hover:text-danger hover:bg-danger/10 border border-transparent
-                           hover:border-danger/30 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                    :disabled="!canChangeLineup">
-              下场
-            </button>
-          </div>
-        </div>
-
-        <!-- 空位提示 -->
-        <div v-for="i in (5 - courtPlayers.length)" :key="'e-'+i"
-             class="flex items-center gap-2 rounded-xl px-2.5 py-2 border border-dashed border-dark-700/30">
-          <div class="w-8 h-8 rounded-lg bg-dark-800 flex items-center justify-center">
-            <span class="text-[10px] text-dark-600">{{ courtPlayers.length + i }}</span>
-          </div>
-          <span class="text-[11px] text-dark-700">空位</span>
-        </div>
+        </template>
       </div>
     </div>
 
@@ -193,6 +195,7 @@ const props = defineProps({
   gameType: String,
   gameStatus: String,
   readonly: { type: Boolean, default: false },
+  lineupReadonly: { type: Boolean, default: false },
   lastUndoAction: { type: Array, default: () => [] }
 })
 
@@ -209,7 +212,7 @@ const membersLoaded = ref(false)
 
 const canRecord = computed(() => props.gameStatus === 'active' && !props.readonly)
 const canChangeLineup = computed(() => 
-  props.gameStatus !== 'finished' && props.gameStatus !== 'cancelled' && !props.readonly
+  props.gameStatus !== 'finished' && props.gameStatus !== 'cancelled' && !props.lineupReadonly
 )
 const lastAction = computed(() => {
   const stack = props.lastUndoAction
@@ -235,14 +238,22 @@ const statusLabelColor = computed(() => {
 function syncLineup(lineup) {
   const courtIds = new Set(lineup.map(l => l.player_id))
 
-  courtPlayers.value = lineup.map(l => ({
-    id: l.player_id,
-    name: l.player?.name || '',
-    jersey_no: l.player?.jersey_no || '',
-    position: l.player?.position || '',
-    avatar_url: l.player?.avatar_url || null,
-    _lineupId: l.id
-  }))
+  // 按 slot_no 填充到 5 个位置，空位留 null
+  const slots = [null, null, null, null, null]
+  for (const l of lineup) {
+    const idx = (l.slot_no || 1) - 1
+    if (idx >= 0 && idx < 5) {
+      slots[idx] = {
+        id: l.player_id,
+        name: l.player?.name || '',
+        jersey_no: l.player?.jersey_no || '',
+        position: l.player?.position || '',
+        avatar_url: l.player?.avatar_url || null,
+        _lineupId: l.id
+      }
+    }
+  }
+  courtPlayers.value = slots
 
   benchPlayers.value = allTeamMembers.value.filter(m => !courtIds.has(m.id))
 }
@@ -368,28 +379,31 @@ function record(actionType) {
   })
 }
 
-// 点击换人
+// 点击换人（乐观更新：先更新 UI，再异步写数据库）
 async function moveToCourt(player) {
   if (!canChangeLineup.value) return
-  if (courtPlayers.value.length >= 5) return
-  const slotNo = courtPlayers.value.length + 1
-  const ok = await addPlayerToLineup(player, slotNo)
-  if (ok) {
-    benchPlayers.value = benchPlayers.value.filter(p => p.id !== player.id)
-    courtPlayers.value.push(player)
-  }
+  const emptyIdx = courtPlayers.value.findIndex(s => s === null)
+  if (emptyIdx < 0) return
+  const slotNo = emptyIdx + 1
+  // 乐观更新 UI
+  benchPlayers.value = benchPlayers.value.filter(p => p.id !== player.id)
+  courtPlayers.value[emptyIdx] = player
+  // 异步写数据库
+  addPlayerToLineup(player, slotNo)
 }
 
 async function moveToBench(player) {
   if (!canChangeLineup.value) return
-  const ok = await removePlayerFromLineup(player)
-  if (ok) {
-    courtPlayers.value = courtPlayers.value.filter(p => p.id !== player.id)
-    benchPlayers.value.push(player)
-    if (selectedPlayer.value?.id === player.id) {
-      selectedPlayer.value = null
-    }
+  const idx = courtPlayers.value.findIndex(p => p?.id === player.id)
+  if (idx < 0) return
+  // 乐观更新 UI
+  courtPlayers.value[idx] = null
+  benchPlayers.value.push(player)
+  if (selectedPlayer.value?.id === player.id) {
+    selectedPlayer.value = null
   }
+  // 异步写数据库
+  removePlayerFromLineup(player)
 }
 
 // ── 数据库（通过 RPC 绕过 RLS）──
