@@ -300,7 +300,13 @@ async function startGame() {
     })
     if (error) throw error
     showToast('比赛已开始')
-    await gameStore.loadGame(gameId)
+    // 只更新比赛状态，不重新 loadLineup（保留比赛前已调整的阵容）
+    const { data: gameData } = await supabase
+      .from('games')
+      .select('*, home_team:home_team_id(*), away_team:away_team_id(*)')
+      .eq('id', gameId)
+      .single()
+    if (gameData) gameStore.currentGame = gameData
   } catch (e) {
     showToast('开始失败：' + (e.message || '未知错误'))
   } finally {

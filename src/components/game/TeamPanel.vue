@@ -45,12 +45,14 @@
             <div class="flex items-center gap-1 flex-shrink-0">
               <span v-if="selectedPlayer?.id === slot.id"
                     class="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></span>
-              <button @click.stop="moveToBench(slot)"
-                      class="px-2 py-1 rounded-lg text-[10px] font-medium text-dark-500
-                             hover:text-danger hover:bg-danger/10 border border-transparent
-                             hover:border-danger/30 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              <button @click.stop="confirmBench(slot)"
+                      class="px-1.5 py-0.5 rounded text-[9px] font-medium
+                             border transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                      :class="benchConfirmId === slot.id
+                        ? 'text-white bg-danger border-danger'
+                        : 'text-dark-500 hover:text-danger hover:bg-danger/10 border-transparent hover:border-danger/30'"
                       :disabled="!canChangeLineup">
-                下场
+                {{ benchConfirmId === slot.id ? '确认?' : '下场' }}
               </button>
             </div>
           </div>
@@ -390,6 +392,24 @@ async function moveToCourt(player) {
   courtPlayers.value[emptyIdx] = player
   // 异步写数据库
   addPlayerToLineup(player, slotNo)
+}
+
+// 防误触：二次点击确认下场
+const benchConfirmId = ref(null)
+let benchTimer = null
+function confirmBench(player) {
+  if (benchConfirmId.value === player.id) {
+    // 第二次点击，执行下场
+    clearTimeout(benchTimer)
+    benchConfirmId.value = null
+    moveToBench(player)
+  } else {
+    // 第一次点击，显示确认
+    benchConfirmId.value = player.id
+    benchTimer = setTimeout(() => {
+      benchConfirmId.value = null
+    }, 2000) // 2秒内不确认则取消
+  }
 }
 
 async function moveToBench(player) {

@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.0 (2026-05-05)
+
+### 阶段数据修复（核心）
+- **swap_player RPC 重写**：删除旧版(SMALLINT参数)，只保留新版(INTEGER参数)，避免版本冲突
+- **修复列名错误**：RPC 中 `games.quarter` → `games.current_quarter`（PostgreSQL 42703 错误）
+- **删除 game_lineup 唯一约束**：支持同一球员多条记录，每次上下场为独立阶段
+- **add 模式优化**：先关闭旧阶段（off_at=NOW），再 INSERT 新记录
+
+### 阵容管理修复
+- **开始比赛保留阵容**：startGame 不再调用 loadGame→loadLineup，避免覆盖赛前已调整的阵容
+- **教练页显示所有球员**：包含未上场的球队成员，playerMap 从 team_players 获取全部 player_id
+- **team_id 兜底**：lineup → game_stats → jerseyMap（team_players），确保过滤正确
+
+### 录入页优化
+- **下场按钮防误触**：二次点击确认（第一次变红显示"确认?"，2秒超时自动取消）
+- **按钮缩小**：px-1.5 py-0.5，文字 9px，更紧凑不遮挡
+
 ## v1.1.1 (2026-05-05)
 
 ### 球队管理

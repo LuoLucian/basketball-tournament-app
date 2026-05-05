@@ -1222,8 +1222,23 @@ async function loadCoachData() {
       .eq('game_id', gameId)
     if (sErr) throw sErr
 
-    // 获取球员信息
+    // 获取球衣号码和位置（先查，因为包含所有球队成员的 player_id）
+    const teamIds = [game.value.home_team_id, game.value.away_team_id]
+    let jerseyMap = {}
+    let positionMap = {}
+    const { data: tpData } = await supabase
+      .from('team_players')
+      .select('player_id, team_id, jersey_no, position')
+      .in('team_id', teamIds)
+    if (tpData) {
+      jerseyMap = Object.fromEntries(tpData.map(t => [t.player_id, t]))
+      positionMap = Object.fromEntries(tpData.map(t => [t.player_id, t.position]))
+    }
+
+    // 获取球员信息（包含球队所有成员 + 有lineup/stats记录的球员）
+    const teamPlayerIds = (tpData || []).map(t => t.player_id)
     const playerIds = [...new Set([
+      ...teamPlayerIds,
       ...(allLineup || []).map(l => l.player_id),
       ...(gameStats || []).map(s => s.player_id)
     ])]
@@ -1236,19 +1251,6 @@ async function loadCoachData() {
       if (players) {
         playerMap = Object.fromEntries(players.map(p => [p.id, p]))
       }
-    }
-
-    // 获取球衣号码和位置
-    const teamIds = [game.value.home_team_id, game.value.away_team_id]
-    let jerseyMap = {}
-    let positionMap = {}
-    const { data: tpData } = await supabase
-      .from('team_players')
-      .select('player_id, team_id, jersey_no, position')
-      .in('team_id', teamIds)
-    if (tpData) {
-      jerseyMap = Object.fromEntries(tpData.map(t => [t.player_id, t]))
-      positionMap = Object.fromEntries(tpData.map(t => [t.player_id, t.position]))
     }
 
     // 计算每个球员的上场时间，并按上场阶段分组
@@ -1510,8 +1512,9 @@ async function loadCoachData() {
       return Math.round(rawScore * 10) / 10
     }
 
-    // 组装教练面板数据
+    // 组装教练面板数据（包含球队所有成员，即使没上场也显示）
     const allPlayerIds = [...new Set([
+      ...teamPlayerIds,
       ...(allLineup || []).map(l => l.player_id),
       ...(gameStats || []).map(s => s.player_id)
     ])]
@@ -1549,7 +1552,8 @@ async function loadCoachData() {
       return {
         player_id: pid,
         team_id: (allLineup || []).find(l => l.player_id === pid)?.team_id
-          || gs.team_id,
+          || gs.team_id
+          || jerseyMap[pid]?.team_id,
         name: pInfo.name || '未知',
         avatar_url: pInfo.avatar_url,
         jersey_no: jInfo.jersey_no,
