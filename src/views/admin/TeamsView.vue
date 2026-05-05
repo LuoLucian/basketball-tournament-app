@@ -415,7 +415,7 @@
                     </p>
                   </div>
                   <!-- 位置选择（选中后显示） -->
-                  <div v-if="pickerSelected.has(p.id)" class="flex items-center gap-1 flex-shrink-0">
+                  <div v-if="pickerSelected.has(p.id)" class="flex items-center gap-1 flex-shrink-0" @click.stop>
                     <select
                       :value="pickerPositions[p.id] || ''"
                       @change="pickerPositions[p.id] = $event.target.value"
