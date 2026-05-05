@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-full bg-dark-900">
+  <div ref="panelRef" class="flex flex-col h-full bg-dark-900">
     <!-- 队名栏 -->
     <div class="px-3 py-2 border-b border-dark-700/50 flex items-center justify-between"
          :style="{ borderTop: `2px solid ${team?.color || '#3b82f6'}` }">
@@ -122,14 +122,14 @@
         </div>
 
         <!-- 撤销按钮 + 上一步操作 -->
-        <div v-if="lastUndoAction" class="mt-2 flex items-center justify-between px-1 pt-1.5 border-t border-dark-700/30">
+        <div v-if="lastAction" class="mt-2 flex items-center justify-between px-1 pt-1.5 border-t border-dark-700/30">
           <div class="text-left min-w-0">
             <p class="text-[9px] text-dark-600">上一步操作</p>
             <p class="text-[11px] text-orange-400 font-medium truncate max-w-[120px]">
-              {{ lastUndoAction.player_name }} {{ actionLabel(lastUndoAction.actionType || lastUndoAction.action_type || '') }}
+              {{ lastAction.player_name }} {{ actionLabel(lastAction.actionType || lastAction.action_type || '') }}
             </p>
           </div>
-          <button @click="emit('undo')"
+          <button @click="emit('undo', lastAction)"
                   class="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold text-white
                          bg-gradient-to-r from-orange-500 to-red-500
                          active:scale-95 transition-all duration-200 flex-shrink-0">
@@ -193,11 +193,12 @@ const props = defineProps({
   gameType: String,
   gameStatus: String,
   readonly: { type: Boolean, default: false },
-  lastUndoAction: { type: Object, default: null }
+  lastUndoAction: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['record', 'lineupChange', 'undo'])
 
+const panelRef = ref(null)
 const courtPlayers = ref([])
 const benchPlayers = ref([])
 const selectedPlayer = ref(null)
@@ -210,6 +211,15 @@ const canRecord = computed(() => props.gameStatus === 'active' && !props.readonl
 const canChangeLineup = computed(() => 
   props.gameStatus !== 'finished' && props.gameStatus !== 'cancelled' && !props.readonly
 )
+const lastAction = computed(() => {
+  const stack = props.lastUndoAction
+  if (!stack || stack.length === 0) return null
+  // 从后往前找属于本队的最后一条（用 == 宽松比较避免类型不匹配）
+  for (let i = stack.length - 1; i >= 0; i--) {
+    if (stack[i].teamId == props.teamId) return stack[i]
+  }
+  return null
+})
 const statusLabel = computed(() => {
   if (props.gameStatus === 'active') return '比赛中'
   if (props.gameStatus === 'finished') return '已结束'
@@ -223,7 +233,6 @@ const statusLabelColor = computed(() => {
 
 // 同步阵容：根据最新的 lineup prop 更新 courtPlayers 和 benchPlayers
 function syncLineup(lineup) {
-  console.log('[TeamPanel] syncLineup called, lineup count:', lineup.length, 'members loaded:', allTeamMembers.value.length)
   const courtIds = new Set(lineup.map(l => l.player_id))
 
   courtPlayers.value = lineup.map(l => ({
@@ -325,7 +334,7 @@ function triggerStatAnimation() {
     .map(s => s.key)
   if (changedKeys.length) {
     requestAnimationFrame(() => {
-      const els = document.querySelectorAll('.stat-num')
+      const els = panelRef.value?.querySelectorAll('.stat-num')
       els.forEach(el => {
         const key = el.dataset.key
         if (changedKeys.includes(key)) {
@@ -362,14 +371,9 @@ function record(actionType) {
 // 点击换人
 async function moveToCourt(player) {
   if (!canChangeLineup.value) return
-  console.log('[TeamPanel] moveToCourt called', player.name, 'court count:', courtPlayers.value.length)
-  if (courtPlayers.value.length >= 5) {
-    console.warn('[TeamPanel] court is full, cannot add player')
-    return
-  }
+  if (courtPlayers.value.length >= 5) return
   const slotNo = courtPlayers.value.length + 1
   const ok = await addPlayerToLineup(player, slotNo)
-  console.log('[TeamPanel] addPlayerToLineup result:', ok)
   if (ok) {
     benchPlayers.value = benchPlayers.value.filter(p => p.id !== player.id)
     courtPlayers.value.push(player)
@@ -378,9 +382,7 @@ async function moveToCourt(player) {
 
 async function moveToBench(player) {
   if (!canChangeLineup.value) return
-  console.log('[TeamPanel] moveToBench called', player.name)
   const ok = await removePlayerFromLineup(player)
-  console.log('[TeamPanel] removePlayerFromLineup result:', ok)
   if (ok) {
     courtPlayers.value = courtPlayers.value.filter(p => p.id !== player.id)
     benchPlayers.value.push(player)
@@ -393,12 +395,8 @@ async function moveToBench(player) {
 // ── 数据库（通过 RPC 绕过 RLS）──
 
 async function addPlayerToLineup(player, slotNo) {
-  if (!props.gameId || !props.teamId) {
-    console.error('[TeamPanel] missing gameId or teamId', props.gameId, props.teamId)
-    return false
-  }
+  if (!props.gameId || !props.teamId) return false
   try {
-    console.log('[TeamPanel] calling swap_player add', { gameId: props.gameId, teamId: props.teamId, playerId: player.id, slotNo })
     const { data, error } = await supabase.rpc('swap_player', {
       p_game_id: props.gameId,
       p_team_id: props.teamId,
@@ -406,7 +404,6 @@ async function addPlayerToLineup(player, slotNo) {
       p_slot_no: slotNo,
       p_mode: 'add'
     })
-    console.log('[TeamPanel] swap_player add response:', { data, error })
     if (error) throw error
     const idx = courtPlayers.value.findIndex(p => p.id === player.id)
     if (idx >= 0 && data) {
@@ -421,24 +418,18 @@ async function addPlayerToLineup(player, slotNo) {
 }
 
 async function removePlayerFromLineup(player) {
-  if (!props.gameId || !props.teamId) {
-    console.error('[TeamPanel] missing gameId or teamId', props.gameId, props.teamId)
-    return false
-  }
+  if (!props.gameId || !props.teamId) return false
   try {
-    console.log('[TeamPanel] calling swap_player remove', { gameId: props.gameId, teamId: props.teamId, playerId: player.id })
     const { data, error } = await supabase.rpc('swap_player', {
       p_game_id: props.gameId,
       p_team_id: props.teamId,
       p_player_id: player.id,
       p_mode: 'remove'
     })
-    console.log('[TeamPanel] swap_player remove response:', { data, error })
     if (error) throw error
     emit('lineupChange', courtPlayers.value)
     return true
   } catch (e) {
-    console.error('[TeamPanel] removePlayerFromLineup error:', e)
     return false
   }
 }

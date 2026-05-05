@@ -114,13 +114,35 @@ export const useGameStore = defineStore('game', () => {
     return data
   }
 
-  // 撤销最后一步
-  async function undoLastAction() {
-    const last = actionStack.value[actionStack.value.length - 1]
-    if (!last) return
-    await recordAction(last.playerId, last.teamId, last.actionType, -1)
-    actionStack.value.pop()
-    actionStack.value.pop() // 也移除这次的撤销记录
+  // 撤销指定操作（由调用方传入要撤销的 action 对象）
+  async function undoAction(action) {
+    if (!action) return
+    // 从 actionStack 中按属性匹配移除该条记录
+    const idx = actionStack.value.findIndex(
+      a => a.playerId === action.playerId && a.teamId === action.teamId && a.actionType === action.actionType
+    )
+    if (idx !== -1) actionStack.value.splice(idx, 1)
+    // 调用 RPC 撤销（delta=-1），不经过 recordAction 避免再次 push
+    const auth = useAuthStore()
+    const { data, error } = await supabase.rpc('record_action', {
+      p_game_id: currentGame.value.id,
+      p_player_id: action.playerId,
+      p_team_id: action.teamId,
+      p_action_type: action.actionType,
+      p_delta: -1,
+      p_quarter: currentGame.value.current_quarter || 1,
+      p_recorded_by: auth.user?.id || null
+    })
+    if (error) throw error
+    // 更新本地比分
+    if (['pts_1', 'pts_2', 'pts_3'].includes(action.actionType)) {
+      const pts = action.actionType === 'pts_1' ? 1 : action.actionType === 'pts_2' ? 2 : 3
+      const isHome = action.teamId == currentGame.value.home_team_id
+      const scoreField = isHome ? 'home_score' : 'away_score'
+      const newScore = (currentGame.value[scoreField] || 0) - pts
+      currentGame.value = { ...currentGame.value, [scoreField]: Math.max(0, newScore) }
+    }
+    return data
   }
 
   // 换人操作
@@ -204,7 +226,7 @@ export const useGameStore = defineStore('game', () => {
     loadGame,
     loadLineup,
     recordAction,
-    undoLastAction,
+    undoAction,
     substitutePlayer,
     subscribeRealtime,
     unsubscribeRealtime

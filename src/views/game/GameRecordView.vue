@@ -102,7 +102,7 @@
       </div>
 
       <!-- 主内容：两队面板 -->
-      <div class="flex gap-0 overflow-x-auto pb-4" style="min-height: calc(100vh - 280px)">
+      <div class="flex gap-0 overflow-x-auto pb-20 md:pb-4" style="min-height: calc(100vh - 280px)">
         <!-- 主队面板 -->
         <TeamPanel
           ref="homePanelRef"
@@ -328,21 +328,17 @@ async function calcMvp() {
   if (error) console.error('[calcMvp] RPC 写入失败:', error)
 }
 
-const lastUndoAction = computed(() => {
-  if (!gameStore.actionStack || gameStore.actionStack.length === 0) return null
-  return gameStore.actionStack[gameStore.actionStack.length - 1]
-})
-
 function showToast(msg) {
   toastMsg.value = msg
   clearTimeout(toastTimer)
   toastTimer = setTimeout(() => { toastMsg.value = '' }, 1500)
 }
 
-async function undoAction() {
-  const action = lastUndoAction.value
+const lastUndoAction = computed(() => gameStore.actionStack)
+
+async function undoAction(action) {
   try {
-    await gameStore.undoLastAction()
+    await gameStore.undoAction(action)
     const desc = action ? `↩ 已撤销：${action.player_name || ''} ${actionLabel(action.actionType || action.action_type || '')}` : '↩ 已撤销'
     showToast(desc)
     // 刷新两个面板的实时数据
