@@ -150,6 +150,12 @@ export const useGameStore = defineStore('game', () => {
   // 换人操作
   async function substitutePlayer(gameId, teamId, outPlayerId, inPlayerId, slotNo) {
     const now = new Date().toISOString()
+    // 获取当前比赛的 total_paused_ms
+    const { data: gameData } = await supabase.from('games')
+      .select('total_paused_ms')
+      .eq('id', gameId)
+      .single()
+    const pausedMsAtOn = gameData?.total_paused_ms || 0
     // 结束换出球员
     await supabase.from('game_lineup')
       .update({ is_current: false, off_at: now })
@@ -157,7 +163,7 @@ export const useGameStore = defineStore('game', () => {
       .eq('team_id', teamId)
       .eq('player_id', outPlayerId)
       .eq('is_current', true)
-    // 添加换入球员
+    // 添加换入球员（记录上场时的暂停毫秒数）
     await supabase.from('game_lineup').insert({
       game_id: gameId,
       team_id: teamId,
@@ -165,7 +171,8 @@ export const useGameStore = defineStore('game', () => {
       slot_no: slotNo,
       quarter: currentGame.value?.current_quarter || 1,
       on_at: now,
-      is_current: true
+      is_current: true,
+      paused_ms_at_on: pausedMsAtOn
     })
     await loadLineup(gameId)
     // 记录日志

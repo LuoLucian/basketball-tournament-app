@@ -1151,9 +1151,8 @@ function isOnCourt(playerId) {
 // Tab 配置
 const detailTabs = computed(() => {
   const tabs = [{ key: 'stats', label: '📊 数据统计' }]
-  // 教练视角权限：super_admin 看全部，admin 看自己创建的球队
-  // 比赛进行中或已结束时均可查看（用于回顾总结）
-  if (['active', 'finished'].includes(game.value?.status) && auth.isLoggedIn && canViewCoachTab.value) {
+  // 教练视角：比赛进行中或已结束时所有人可见
+  if (['active', 'finished'].includes(game.value?.status)) {
     tabs.push({ key: 'coach', label: '👔 教练视角' })
   }
   return tabs
@@ -1415,12 +1414,12 @@ async function loadCoachData() {
     // 5. 业余友好：基础分底薪 + 降低惩罚力度 + 放宽贡献阈值
 
     const POSITION_WEIGHTS = {
-      PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -0.6, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 },
-      SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
-      SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
-      PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -0.5, pf: -0.5, fga_miss: -0.4, fta_miss: -0.3 },
-      C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.4, pf: -0.5, fga_miss: -0.3, fta_miss: -0.3 },
-      FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -0.5, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 }
+      PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -1.2, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 },
+      SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
+      SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
+      PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -1.0, pf: -0.9, fga_miss: -0.6, fta_miss: -0.5 },
+      C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.8, pf: -0.9, fga_miss: -0.5, fta_miss: -0.5 },
+      FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -1.0, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 }
     }
 
     // 位置核心指标（用于计算"位置贡献度"）
@@ -1523,18 +1522,18 @@ async function loadCoachData() {
         else if (minutes <= 5) timeModifier = 1.2
         else if (minutes >= 15) timeModifier = 0.95
 
-        // 第五步：底薪（有贡献才给，零贡献不给）
-        let baseScore = 0
-        const hasContribution = (s.pts || 0) > 0 || (s.reb || 0) > 0 || (s.ast || 0) > 0
-          || (s.stl || 0) > 0 || (s.blk || 0) > 0
-        if (hasContribution) {
-          baseScore = 0.5 * minutes
-        }
+        // 第五步：去除底薪
 
-        const finalScore = (rawScore + contextBonus + impactBonus + baseScore) * timeModifier
-        // 用 minutes^0.7 减弱时间衰减（长时间上场不会过度稀释评分）
-        const adjustedMinutes = Math.pow(minutes, 0.7)
-        return Math.round((finalScore / adjustedMinutes) * 10) / 10
+        const finalScore = (rawScore + contextBonus + impactBonus) * timeModifier
+        // 正分除以 √分钟，负分乘以 √分钟
+        let rating
+        if (finalScore >= 0) {
+          rating = finalScore / Math.sqrt(minutes)
+        } else {
+          rating = finalScore * Math.sqrt(minutes)
+        }
+        // 注意：无贡献额外惩罚移到定时器中处理（每3分钟检查一次）
+        return Math.round(rating * 10) / 10
       }
 
       return Math.round(rawScore * 10) / 10
@@ -1575,7 +1574,8 @@ async function loadCoachData() {
           off_at: stint.off_at,
           ...stint.stats,
           rating: calcRating(stint.stats, pos, stintMins, stint.teamPointsGained, stint.oppPointsGained, stint.netEfficiency, stint.beforeNetRate),
-          _lineupEntry: lineupEntry || null
+          _lineupEntry: lineupEntry || null,
+          _accumulatedSec: stint.duration || 0  // 初始化已累计秒数
         }
       })
 
@@ -1589,7 +1589,8 @@ async function loadCoachData() {
         jersey_no: jInfo.jersey_no,
         position: pos,
         totalMinutes: formatSeconds(mins.total),
-        _lineupData: playerLineupData,  // 保存引用用于定时器更新
+        _lineupData: playerLineupData,
+        _totalAccumulatedSec: mins.total || 0,  // 初始化已累计总秒数
         pts: gs.pts || 0,
         reb: gs.reb || 0,
         ast: gs.ast || 0,
@@ -1601,10 +1602,8 @@ async function loadCoachData() {
         rating: 0, // 先设为0，下面组装完 stintsData 后计算
         stints: stintsData
       }
-      // 按时间加权计算总评分，返回0时保留原值（暂停时不会误清零）
-      const newRating = calcTimeWeightedRating(stintsData)
-      const existingPlayer = coachPlayers.value.find(p => p.player_id === pid)
-      player.rating = newRating > 0 ? newRating : (existingPlayer?.rating || 0)
+      // 按时间加权计算总评分
+      player.rating = calcTimeWeightedRating(stintsData)
       return player
     })
     // 固定排序（不因评分变化重排）
@@ -1685,8 +1684,9 @@ watch(activeTab, (val) => {
   }
 })
 
-// 教练页定时器：实时更新上场时间 + 重算评分
+// 教练页定时器：累加式，暂停时停止，恢复时继续
 let coachTimer = null
+let lastTickTime = 0
 
 // 从 game 记录获取累计暂停毫秒数（数据库持久化，跨页面可靠）
 function getGamePausedMs() {
@@ -1704,22 +1704,26 @@ function getLineupDurationSec(lineupEntry) {
   if (!lineupEntry) return 0
   const start = new Date(lineupEntry.on_at).getTime()
   const end = lineupEntry.off_at ? new Date(lineupEntry.off_at).getTime() : Date.now()
-  // 只对未结束的阶段扣除暂停时间
+  // 计算上场期间暂停时间 = 当前总暂停 - 上场时总暂停
   let paused = 0
   if (!lineupEntry.off_at) {
-    paused = getGamePausedMs()
+    const pausedMsAtOn = lineupEntry.paused_ms_at_on || 0
+    const currentPausedMs = getGamePausedMs()
+    paused = Math.max(0, currentPausedMs - pausedMsAtOn)
   }
-  return Math.max(0, Math.floor((end - start - paused) / 1000))
+  const elapsed = end - start
+  paused = Math.min(paused, elapsed)
+  return Math.max(0, Math.floor((elapsed - paused) / 1000))
 }
 
 // 简化版评分函数（供定时器使用，与 changeStintPosition 一致）
 const TIMER_POSITION_WEIGHTS = {
-  PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -0.6, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 },
-  SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
-  SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
-  PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -0.5, pf: -0.5, fga_miss: -0.4, fta_miss: -0.3 },
-  C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.4, pf: -0.5, fga_miss: -0.3, fta_miss: -0.3 },
-  FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -0.5, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 }
+  PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -1.2, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 },
+  SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
+  SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
+  PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -1.0, pf: -0.9, fga_miss: -0.6, fta_miss: -0.5 },
+  C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.8, pf: -0.9, fga_miss: -0.5, fta_miss: -0.5 },
+  FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -1.0, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 }
 }
 
 function quickRecalcStintRating(stint, pos) {
@@ -1731,15 +1735,20 @@ function quickRecalcStintRating(stint, pos) {
   const fgaMiss = (stint.fga || 0) - (stint.fgm || 0)
   const ftaMiss = (stint.fta || 0) - (stint.ftm || 0)
   const raw = (stint.pts||0)*w.pts + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
-  // 有贡献才给底薪
-  const hasContribution = (stint.pts||0) > 0 || (stint.reb||0) > 0 || (stint.ast||0) > 0 || (stint.stl||0) > 0 || (stint.blk||0) > 0
-  const baseScore = hasContribution ? 0.5 * mins : 0
+  // 去除底薪
   let timeModifier = 1.0
   if (mins <= 2) timeModifier = 1.4
   else if (mins <= 5) timeModifier = 1.2
   else if (mins >= 15) timeModifier = 0.95
-  const finalScore = (raw + baseScore) * timeModifier
-  stint.rating = Math.round((finalScore / mins) * 10) / 10
+  const finalScore = raw * timeModifier
+  // 正分除以 √分钟，负分乘以 √分钟
+  let rating
+  if (finalScore >= 0) {
+    rating = finalScore / Math.sqrt(mins)
+  } else {
+    rating = finalScore * Math.sqrt(mins)
+  }
+  stint.rating = Math.round(rating * 10) / 10
 }
 
 // 防抖：避免短时间内多次录入触发过多 loadCoachData
@@ -1782,20 +1791,17 @@ function subscribeGameUpdates() {
       table: 'action_logs',
       filter: `game_id=eq.${gameId}`
     }, (payload) => {
-      if (activeTab.value === 'coach' && payload.new) {
-        incrementalUpdatePlayerStats(payload.new)
+      console.log('[Realtime] action_logs 事件:', payload.eventType, payload.new?.action_type, 'player:', payload.new?.player_id)
+      if (payload.new) {
+        // 增量更新教练页数据
+        if (activeTab.value === 'coach') {
+          incrementalUpdatePlayerStats(payload.new)
+        }
+        // 增量更新数据统计页
+        incrementalUpdateStats(payload.new)
       }
     })
-    // 监听 game_stats 变化（统计数据更新时触发）- 全量刷新（阵容变化较少）
-    .on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'game_stats',
-      filter: `game_id=eq.${gameId}`
-    }, () => {
-      debouncedLoadCoachData()
-    })
-    // 监听 game_lineup 变化（换人时触发）- 全量刷新（阵容变化较少）
+    // 监听 game_lineup 变化（换人时触发）- 阵容变化需要全量刷新
     .on('postgres_changes', {
       event: '*',
       schema: 'public',
@@ -1807,23 +1813,55 @@ function subscribeGameUpdates() {
     .subscribe()
 }
 
+// 增量更新数据统计页（避免全量刷新）
+function incrementalUpdateStats(actionLog) {
+  const playerId = actionLog.player_id
+  const stat = stats.value.find(s => s.player_id === playerId)
+  if (!stat) return
+  const d = actionLog.delta || 1
+  switch (actionLog.action_type) {
+    case 'pts_1': stat.pts = (stat.pts||0) + 1*d; stat.ftm = (stat.ftm||0) + 1*d; stat.fta = (stat.fta||0) + 1*d; break
+    case 'pts_2': stat.pts = (stat.pts||0) + 2*d; stat.fgm = (stat.fgm||0) + 1*d; stat.fga = (stat.fga||0) + 1*d; break
+    case 'pts_3': stat.pts = (stat.pts||0) + 3*d; stat.fgm = (stat.fgm||0) + 1*d; stat.fga = (stat.fga||0) + 1*d; stat.fg3m = (stat.fg3m||0) + 1*d; stat.fg3a = (stat.fg3a||0) + 1*d; break
+    case 'reb': stat.reb = (stat.reb||0) + d; break
+    case 'ast': stat.ast = (stat.ast||0) + d; break
+    case 'stl': stat.stl = (stat.stl||0) + d; break
+    case 'blk': stat.blk = (stat.blk||0) + d; break
+    case 'tov': stat.tov = (stat.tov||0) + d; break
+    case 'pf': stat.pf = (stat.pf||0) + d; break
+  }
+}
+
 // 增量更新球员统计数据（避免全量刷新）
 function incrementalUpdatePlayerStats(actionLog) {
+  console.log('[增量更新] 收到事件:', actionLog.action_type, '球员:', actionLog.player_id)
   const playerId = actionLog.player_id
   const player = coachPlayers.value.find(p => p.player_id === playerId)
-  if (!player || !player.stints) return
+  if (!player || !player.stints) {
+    console.log('[增量更新] 未找到球员或无 stints 数据')
+    return
+  }
 
   const actionTime = new Date(actionLog.created_at)
   const delta = actionLog.delta || 1
 
   // 找到包含该 action 的上场阶段
-  const stint = player.stints.find(s => {
-    if (!s.on_at) return false
-    const start = new Date(s.on_at)
-    const end = s.off_at ? new Date(s.off_at) : new Date()
-    return actionTime >= start && actionTime <= end
-  })
-  if (!stint) return
+  // 优先匹配当前在场阶段（off_at 为 null），否则按时间匹配
+  let stint = player.stints.find(s => !s.off_at)
+  if (!stint) {
+    const actionTime = new Date(actionLog.created_at)
+    stint = player.stints.find(s => {
+      if (!s.on_at) return false
+      const start = new Date(s.on_at)
+      const end = s.off_at ? new Date(s.off_at) : new Date()
+      return actionTime >= start && actionTime <= end
+    })
+  }
+  if (!stint) {
+    console.log('[增量更新] 未找到匹配的上场阶段, stints数量:', player.stints.length)
+    return
+  }
+  console.log('[增量更新] 匹配成功，更新数据')
 
   // 更新阶段统计数据
   switch (actionLog.action_type) {
@@ -1863,8 +1901,7 @@ function incrementalUpdatePlayerStats(actionLog) {
 
   // 重新计算该阶段评分
   const pos = stint.stintPosition || player.position || 'FLEX'
-  const stintMins = Math.ceil(stint.rawDuration / 60) || 1
-  stint.rating = calcRating(stint, pos, stintMins, stint.teamPointsGained || 0, stint.oppPointsGained || 0, stint.netEfficiency || 0, stint.beforeNetRate || 0)
+  quickRecalcStintRating(stint, pos)
 
   // 重新计算全场评分
   player.rating = calcTimeWeightedRating(player.stints)
@@ -1892,12 +1929,16 @@ function calcTimeWeightedRating(stints) {
   return Math.round((totalWeightedRating / totalSeconds) * 10) / 10
 }
 
+// 基于时间戳的定时器：每秒重算所有在场球员的时间（使用 paused_ms_at_on 精确扣除暂停）
+// 每2分钟检查无贡献惩罚
+const CHECK_INTERVAL_MS = 2 * 60 * 1000  // 2分钟
+const PENALTY_PER_MINUTE = 0.3
+
 function startCoachTimer() {
   stopCoachTimer()
   coachTimer = setInterval(() => {
     if (coachPlayers.value.length === 0) return
-    // 暂停时不更新（但仍然保留定时器，恢复后自动继续）
-    if (game.value?.is_paused) return
+    const now = Date.now()
     for (const player of coachPlayers.value) {
       if (!player._lineupData) continue
       // 总上场时间 = 所有阶段有效时长之和
@@ -1911,17 +1952,63 @@ function startCoachTimer() {
         if (stint._lineupEntry) {
           const sec = getLineupDurationSec(stint._lineupEntry)
           stint.minutes = formatSeconds(sec)
+          stint.rawDuration = sec
           // 用该阶段的位置重算评分
           const pos = stint.stintPosition || player.position || 'FLEX'
           quickRecalcStintRating(stint, pos)
+          
+          // 3分钟无贡献检查
+          const hasPositive = (stint.pts||0) > 0 || (stint.reb||0) > 0 || (stint.ast||0) > 0 || 
+                              (stint.stl||0) > 0 || (stint.blk||0) > 0
+          if (hasPositive) {
+            // 有正向数据，重置检查点
+            stint._lastPositiveAt = now
+            stint._penaltyStartAt = null
+            stint._penaltyMinutes = 0
+          } else {
+            // 无正向数据，检查是否超过3分钟
+            const lastPositive = stint._lastPositiveAt || stint._penaltyStartAt || now
+            const elapsedSinceCheck = now - lastPositive
+            if (elapsedSinceCheck >= CHECK_INTERVAL_MS) {
+              // 3分钟无正向数据，开始/继续惩罚
+              if (!stint._penaltyStartAt) {
+                stint._penaltyStartAt = now
+              }
+              const penaltyElapsedMin = Math.floor((now - stint._penaltyStartAt) / 60000)
+              stint._penaltyMinutes = penaltyElapsedMin
+            }
+          }
         }
       }
-      // 重算全场评分（按时间加权平均）
-      const allStints = player.stints || []
-      player.rating = calcTimeWeightedRating(allStints)
+      // 重算全场评分（包含惩罚）
+      player.rating = calcTimeWeightedRatingWithPenalty(player.stints)
     }
-    // 不实时排序，保持固定序列避免重渲染
-  }, 10000)
+  }, 1000)
+}
+
+// 计算加权评分，包含无贡献惩罚
+function calcTimeWeightedRatingWithPenalty(stints) {
+  if (!stints || stints.length === 0) return 0
+  let totalWeightedRating = 0
+  let totalSeconds = 0
+  for (const stint of stints) {
+    let secs = 0
+    if (stint.on_at) {
+      const start = new Date(stint.on_at).getTime()
+      const end = stint.off_at ? new Date(stint.off_at).getTime() : Date.now()
+      secs = Math.max(0, Math.floor((end - start) / 1000))
+    }
+    if (secs <= 0) continue
+    // 基础评分
+    let rating = stint.rating || 0
+    // 添加无贡献惩罚（每分钟-0.3）
+    const penaltyMin = stint._penaltyMinutes || 0
+    rating = rating - (penaltyMin * PENALTY_PER_MINUTE)
+    totalWeightedRating += rating * secs
+    totalSeconds += secs
+  }
+  if (totalSeconds === 0) return 0
+  return Math.round((totalWeightedRating / totalSeconds) * 10) / 10
 }
 function stopCoachTimer() {
   if (coachTimer) { clearInterval(coachTimer); coachTimer = null }
