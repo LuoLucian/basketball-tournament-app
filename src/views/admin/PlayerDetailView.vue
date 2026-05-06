@@ -344,12 +344,12 @@ const radarValues = computed(() => {
     avg[k] = stats.reduce((sum, s) => sum + (s[k] || 0), 0) / games
   })
 
-  // 基于篮球经验的最大值参考
+  // 满分10分制：maxRefs为该指标得10分所需数值
   const maxRefs = { pts: 30, reb: 15, ast: 10, stl: 5, blk: 5, fg3m: 5 }
 
   return radarKeys.map(k => {
-    const v = Math.round((avg[k] / maxRefs[k]) * 100)
-    return Math.min(v, 100)
+    const v = Math.round((avg[k] / maxRefs[k]) * 10 * 10) / 10
+    return Math.min(Math.max(v, 0), 10)
   })
 })
 
@@ -373,7 +373,7 @@ function gridPoints(fraction) {
 
 const dataPoints = computed(() => {
   return radarValues.value.map((v, i) => {
-    const r = (v / 100) * radius
+    const r = (v / 10) * radius  // 0-10分映射到半径
     const a = angleForIndex(i)
     return `${center + r * Math.cos(a)},${center + r * Math.sin(a)}`
   }).join(' ')
@@ -381,7 +381,7 @@ const dataPoints = computed(() => {
 
 const dataPointCoords = computed(() => {
   return radarValues.value.map((v, i) => {
-    const r = (v / 100) * radius
+    const r = (v / 10) * radius  // 0-10分映射到半径
     const a = angleForIndex(i)
     return { x: center + r * Math.cos(a), y: center + r * Math.sin(a) }
   })
@@ -422,17 +422,20 @@ const summaryStats = computed(() => {
   if (!stats.length) return [
     { label: '场次', value: 0 }, { label: '总得分', value: 0 },
     { label: '总篮板', value: 0 }, { label: '总助攻', value: 0 },
-    { label: '总抢断', value: 0 }, { label: 'MVP分', value: '0.0' }
+    { label: '总抢断', value: 0 }, { label: '场均MVP', value: '0.0' }
   ]
   const sum = (key) => stats.reduce((acc, s) => acc + (s[key] || 0), 0)
-  const totals = { pts: sum('pts'), reb: sum('reb'), ast: sum('ast'), stl: sum('stl') }
+  const totals = { pts: sum('pts'), reb: sum('reb'), ast: sum('ast'), stl: sum('stl'), blk: sum('blk'), tov: sum('tov'), pf: sum('pf') }
+  const games = stats.length || 1
+  // 场均MVP分
+  const avgMvp = (calcMvpScore(totals) / games).toFixed(1)
   return [
     { label: '场次', value: stats.length },
     { label: '总得分', value: totals.pts },
     { label: '总篮板', value: totals.reb },
     { label: '总助攻', value: totals.ast },
     { label: '总抢断', value: totals.stl },
-    { label: 'MVP分', value: calcMvpScore(totals) }
+    { label: '场均MVP', value: avgMvp }
   ]
 })
 

@@ -89,8 +89,8 @@
           <!-- 状态行 -->
           <div class="flex items-center justify-between mb-5">
             <span class="badge"
-              :class="game.status === 'active' ? 'badge-green animate-pulse' : game.status === 'finished' ? 'badge-blue' : 'badge-gray'">
-              {{ GAME_STATUS_LABELS[game.status]?.text }}
+              :class="game.status === 'active' && !game.is_paused ? 'badge-green animate-pulse' : game.status === 'active' && game.is_paused ? 'badge-yellow' : game.status === 'finished' ? 'badge-blue' : 'badge-gray'">
+              {{ game.status === 'active' && game.is_paused ? '已暂停' : GAME_STATUS_LABELS[game.status]?.text }}
             </span>
             <span class="text-xs text-dark-500 font-medium">
               {{ game.game_type === 'entertainment' ? `目标 ${game.target_score} 分` : `第 ${game.current_quarter} 节` }}
