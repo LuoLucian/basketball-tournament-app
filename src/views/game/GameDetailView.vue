@@ -1753,16 +1753,18 @@ function subscribeGameUpdates() {
         }
       }
     })
-    // 监听 action_logs 变化（录入端新增操作时触发）
+    // 监听 action_logs 变化（录入端新增操作时触发）- 增量更新
     .on('postgres_changes', {
       event: 'INSERT',
       schema: 'public',
       table: 'action_logs',
       filter: `game_id=eq.${gameId}`
-    }, () => {
-      debouncedLoadCoachData()
+    }, (payload) => {
+      if (activeTab.value === 'coach' && payload.new) {
+        incrementalUpdatePlayerStats(payload.new)
+      }
     })
-    // 监听 game_stats 变化（统计数据更新时触发）
+    // 监听 game_stats 变化（统计数据更新时触发）- 全量刷新（阵容变化较少）
     .on('postgres_changes', {
       event: 'UPDATE',
       schema: 'public',
@@ -1771,7 +1773,7 @@ function subscribeGameUpdates() {
     }, () => {
       debouncedLoadCoachData()
     })
-    // 监听 game_lineup 变化（换人时触发）
+    // 监听 game_lineup 变化（换人时触发）- 全量刷新（阵容变化较少）
     .on('postgres_changes', {
       event: '*',
       schema: 'public',
@@ -1781,6 +1783,72 @@ function subscribeGameUpdates() {
       debouncedLoadCoachData()
     })
     .subscribe()
+}
+
+// 增量更新球员统计数据（避免全量刷新）
+function incrementalUpdatePlayerStats(actionLog) {
+  const playerId = actionLog.player_id
+  const player = coachPlayers.value.find(p => p.player_id === playerId)
+  if (!player || !player.stints) return
+
+  const actionTime = new Date(actionLog.created_at)
+  const delta = actionLog.delta || 1
+
+  // 找到包含该 action 的上场阶段
+  const stint = player.stints.find(s => {
+    if (!s.on_at) return false
+    const start = new Date(s.on_at)
+    const end = s.off_at ? new Date(s.off_at) : new Date()
+    return actionTime >= start && actionTime <= end
+  })
+  if (!stint) return
+
+  // 更新阶段统计数据
+  switch (actionLog.action_type) {
+    case 'pts_1':
+      stint.pts = (stint.pts || 0) + 1 * delta
+      stint.ftm = (stint.ftm || 0) + 1 * delta
+      stint.fta = (stint.fta || 0) + 1 * delta
+      break
+    case 'pts_2':
+      stint.pts = (stint.pts || 0) + 2 * delta
+      stint.fgm = (stint.fgm || 0) + 1 * delta
+      stint.fga = (stint.fga || 0) + 1 * delta
+      break
+    case 'pts_3':
+      stint.pts = (stint.pts || 0) + 3 * delta
+      stint.fgm = (stint.fgm || 0) + 1 * delta
+      stint.fga = (stint.fga || 0) + 1 * delta
+      stint.fg3m = (stint.fg3m || 0) + 1 * delta
+      stint.fg3a = (stint.fg3a || 0) + 1 * delta
+      break
+    case 'reb': stint.reb = (stint.reb || 0) + delta; break
+    case 'ast': stint.ast = (stint.ast || 0) + delta; break
+    case 'stl': stint.stl = (stint.stl || 0) + delta; break
+    case 'blk': stint.blk = (stint.blk || 0) + delta; break
+    case 'tov': stint.tov = (stint.tov || 0) + delta; break
+    case 'pf': stint.pf = (stint.pf || 0) + delta; break
+  }
+
+  // 更新全场统计数据
+  player.pts = (player.pts || 0) + (actionLog.action_type === 'pts_1' ? 1 : actionLog.action_type === 'pts_2' ? 2 : actionLog.action_type === 'pts_3' ? 3 : 0) * delta
+  if (actionLog.action_type === 'reb') player.reb = (player.reb || 0) + delta
+  if (actionLog.action_type === 'ast') player.ast = (player.ast || 0) + delta
+  if (actionLog.action_type === 'stl') player.stl = (player.stl || 0) + delta
+  if (actionLog.action_type === 'blk') player.blk = (player.blk || 0) + delta
+  if (actionLog.action_type === 'tov') player.tov = (player.tov || 0) + delta
+  if (actionLog.action_type === 'pf') player.pf = (player.pf || 0) + delta
+
+  // 重新计算该阶段评分
+  const pos = stint.stintPosition || player.position || 'FLEX'
+  const stintMins = Math.ceil(stint.rawDuration / 60) || 1
+  stint.rating = calcRating(stint, pos, stintMins, stint.teamPointsGained || 0, stint.oppPointsGained || 0, stint.netEfficiency || 0, stint.beforeNetRate || 0)
+
+  // 重新计算全场评分
+  player.rating = calcTimeWeightedRating(player.stints)
+
+  // 重新排序（可选：如果不需要实时排序可以注释掉）
+  coachPlayers.value.sort((a, b) => b.rating - a.rating)
 }
 
 // 按时间加权平均计算总评分（直接从 on_at/off_at 计算原始秒数，不依赖暂停追踪）
