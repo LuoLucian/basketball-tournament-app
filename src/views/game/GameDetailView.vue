@@ -631,7 +631,7 @@
               <!-- 评分 -->
               <div class="text-right flex-shrink-0">
                 <p class="text-[9px] text-dark-500">效率评分</p>
-                <p class="text-lg font-black" :class="p.rating >= 15 ? 'text-green-400' : p.rating >= 8 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
+                <p class="text-lg font-black" :class="p.rating >= 10 ? 'text-emerald-400' : p.rating >= 5 ? 'text-green-400' : p.rating >= 2 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
                   {{ p.rating > 0 ? '+' : '' }}{{ p.rating }}
                 </p>
               </div>
@@ -721,7 +721,7 @@
               <!-- 评分 -->
               <div class="text-right flex-shrink-0">
                 <p class="text-[9px] text-dark-500">效率评分</p>
-                <p class="text-lg font-black" :class="p.rating >= 15 ? 'text-green-400' : p.rating >= 8 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
+                <p class="text-lg font-black" :class="p.rating >= 10 ? 'text-emerald-400' : p.rating >= 5 ? 'text-green-400' : p.rating >= 2 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
                   {{ p.rating > 0 ? '+' : '' }}{{ p.rating }}
                 </p>
               </div>
@@ -808,7 +808,7 @@
               <!-- 评分 -->
               <div class="text-right flex-shrink-0">
                 <p class="text-[9px] text-dark-500">效率评分</p>
-                <p class="text-lg font-black" :class="p.rating >= 15 ? 'text-green-400' : p.rating >= 8 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
+                <p class="text-lg font-black" :class="p.rating >= 10 ? 'text-emerald-400' : p.rating >= 5 ? 'text-green-400' : p.rating >= 2 ? 'text-yellow-400' : p.rating >= 0 ? 'text-dark-300' : 'text-red-400'">
                   {{ p.rating > 0 ? '+' : '' }}{{ p.rating }}
                 </p>
               </div>
@@ -1653,8 +1653,9 @@ function changeStintPosition(playerId, stintIndex, newPosition) {
 
 // 格式化秒数为 mm:ss
 function getRatingClass(rating) {
-  if (rating >= 15) return 'text-green-400'
-  if (rating >= 8) return 'text-yellow-400'
+  if (rating >= 10) return 'text-emerald-400'
+  if (rating >= 5) return 'text-green-400'
+  if (rating >= 2) return 'text-yellow-400'
   if (rating >= 0) return 'text-dark-300'
   return 'text-red-400'
 }
