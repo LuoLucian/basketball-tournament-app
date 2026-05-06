@@ -1438,8 +1438,9 @@ async function loadCoachData() {
       const ftaMiss = (s.fta || 0) - (s.ftm || 0)
 
       // 第一步：基础加权分数（个人表现）
+      // 得分直接加总分（不按分值乘系数），其他数据按次数加权
       const rawScore =
-        (s.pts || 0) * w.pts +
+        (s.pts || 0) +
         (s.reb || 0) * w.reb +
         (s.ast || 0) * w.ast +
         (s.stl || 0) * w.stl +
@@ -1638,7 +1639,8 @@ function changeStintPosition(playerId, stintIndex, newPosition) {
   const stintMins = Math.ceil(parseInt(stint.minutes) / 60) || 1
   const fgaMiss = (stint.fga || 0) - (stint.fgm || 0)
   const ftaMiss = (stint.fta || 0) - (stint.ftm || 0)
-  const raw = (stint.pts||0)*w.pts + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
+  // 得分直接加总分（不按分值乘系数）
+  const raw = (stint.pts||0) + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
   stint.rating = Math.round((raw / stintMins) * 10) / 10
 
   // 重算全场评分（按时间加权平均）
@@ -1966,16 +1968,14 @@ function startCoachTimer() {
             stint._penaltyStartAt = null
             stint._penaltyMinutes = 0
           } else {
-            // 无正向数据，检查是否超过3分钟
-            const lastPositive = stint._lastPositiveAt || stint._penaltyStartAt || now
+            // 无正向数据，检查是否超过2分钟
+            const lastPositive = stint._lastPositiveAt || (now - CHECK_INTERVAL_MS)
             const elapsedSinceCheck = now - lastPositive
             if (elapsedSinceCheck >= CHECK_INTERVAL_MS) {
-              // 3分钟无正向数据，开始/继续惩罚
-              if (!stint._penaltyStartAt) {
-                stint._penaltyStartAt = now
-              }
-              const penaltyElapsedMin = Math.floor((now - stint._penaltyStartAt) / 60000)
-              stint._penaltyMinutes = penaltyElapsedMin
+              // 超过2分钟无正向数据，惩罚分钟 = 从检查点开始的完整分钟数
+              stint._penaltyMinutes = Math.floor((elapsedSinceCheck - CHECK_INTERVAL_MS) / 60000)
+            } else {
+              stint._penaltyMinutes = 0
             }
           }
         }
