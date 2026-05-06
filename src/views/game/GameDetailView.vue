@@ -889,12 +889,14 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useGameStore } from '@/stores/game'
 import { supabase } from '@/utils/supabase'
 import { GAME_STATUS_LABELS, getInitials, fmtDateTime } from '@/utils/helpers'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const gameStore = useGameStore()
 const gameId = route.params.id
 
 const game = ref(null)
@@ -1255,7 +1257,6 @@ async function loadCoachData() {
     }
 
     // 计算每个球员的上场时间，并按上场阶段分组
-    const now = new Date()
     const minutesMap = {}  // { [playerId]: { total: 秒, quarters: { [q]: 秒 } } }
     const stintsMap = {}   // { [playerId]: [{ quarter, on_at, off_at, duration, team_id }] } 上场阶段
 
@@ -1263,20 +1264,24 @@ async function loadCoachData() {
       if (!minutesMap[l.player_id]) minutesMap[l.player_id] = { total: 0, quarters: {} }
       if (!stintsMap[l.player_id]) stintsMap[l.player_id] = []
       const m = minutesMap[l.player_id]
-      const start = new Date(l.on_at)
-      const end = l.off_at ? new Date(l.off_at) : now
-      const duration = Math.max(0, Math.floor((end - start) / 1000))  // 秒
+      // 使用 getLineupDurationSec 计算有效时长（扣除暂停）
+      const duration = getLineupDurationSec(l)  // 秒
       m.total += duration
 
       const q = l.quarter || 1
       if (!m.quarters[q]) m.quarters[q] = 0
       m.quarters[q] += duration
 
+      // 原始时长（未扣除暂停，用于评分计算）
+      const rawDuration = Math.max(0, Math.floor(
+        ((l.off_at ? new Date(l.off_at).getTime() : Date.now()) - new Date(l.on_at).getTime()) / 1000
+      ))
       stintsMap[l.player_id].push({
         quarter: q,
         on_at: l.on_at,
         off_at: l.off_at || null,
-        duration,
+        duration,           // 扣除暂停后的时长（用于显示）
+        rawDuration,        // 原始时长（用于评分计算）
         team_id: l.team_id
       })
     }
@@ -1309,6 +1314,7 @@ async function loadCoachData() {
       stintStatsMap[pid] = stintsMap[pid].map(stint => ({
         quarter: stint.quarter,
         duration: stint.duration,
+        rawDuration: stint.rawDuration,
         team_id: stint.team_id,
         on_at: stint.on_at,
         off_at: stint.off_at,
@@ -1329,7 +1335,7 @@ async function loadCoachData() {
       // 找到包含该 action 时间点的上场阶段
       const stint = stints.find(s => {
         const start = new Date(s.on_at)
-        const end = s.off_at ? new Date(s.off_at) : now
+        const end = s.off_at ? new Date(s.off_at) : new Date()
         return actionTime >= start && actionTime <= end
       })
       if (!stint) continue
@@ -1352,7 +1358,7 @@ async function loadCoachData() {
     for (const pid of Object.keys(stintStatsMap)) {
       for (const stint of stintStatsMap[pid]) {
         const startAt = new Date(stint.on_at)
-        const endAt = stint.off_at ? new Date(stint.off_at) : now
+        const endAt = stint.off_at ? new Date(stint.off_at) : new Date()
         const oppTeamId = getOpponentTeamId(stint.team_id)
 
         stint.teamPointsGained = calcTeamPointsInWindow(stint.team_id, startAt, endAt)
@@ -1544,9 +1550,11 @@ async function loadCoachData() {
           stintIndex: idx + 1,
           quarter: stint.quarter,
           minutes: formatSeconds(stint.duration),
+          on_at: stint.on_at,
+          off_at: stint.off_at,
           ...stint.stats,
           rating: calcRating(stint.stats, pos, stintMins, stint.teamPointsGained, stint.oppPointsGained, stint.netEfficiency, stint.beforeNetRate),
-          _lineupEntry: lineupEntry || null  // 保存引用用于定时器更新
+          _lineupEntry: lineupEntry || null
         }
       })
 
@@ -1568,15 +1576,15 @@ async function loadCoachData() {
         blk: gs.blk || 0,
         tov: gs.tov || 0,
         pf: gs.pf || 0,
-        // 全场评分：用该球员所有阶段的汇总数据
-        rating: calcRating(gs, pos, totalMins,
-          stints.reduce((sum, s) => sum + (s.teamPointsGained || 0), 0),
-          stints.reduce((sum, s) => sum + (s.oppPointsGained || 0), 0),
-          stints.length > 0 ? stints.reduce((sum, s) => sum + (s.netEfficiency || 0), 0) / stints.length : 0,
-          stints.length > 0 ? stints[0].beforeNetRate || 0 : 0
-        ),
+        // 全场评分：按各阶段时间加权平均
+        rating: 0, // 先设为0，下面组装完 stintsData 后计算
         stints: stintsData
       }
+      // 按时间加权计算总评分，返回0时保留原值（暂停时不会误清零）
+      const newRating = calcTimeWeightedRating(stintsData)
+      const existingPlayer = coachPlayers.value.find(p => p.player_id === pid)
+      player.rating = newRating > 0 ? newRating : (existingPlayer?.rating || 0)
+      return player
     }).sort((a, b) => b.rating - a.rating)  // 按评分排序
   } catch (e) {
     console.error('加载教练数据失败:', e)
@@ -1611,11 +1619,9 @@ function changeStintPosition(playerId, stintIndex, newPosition) {
   const raw = (stint.pts||0)*w.pts + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
   stint.rating = Math.round((raw / stintMins) * 10) / 10
 
-  // 重算全场评分（所有阶段评分的平均值）
+  // 重算全场评分（按时间加权平均）
   const allStints = player.stints || []
-  player.rating = allStints.length > 0
-    ? Math.round(allStints.reduce((sum, s) => sum + s.rating, 0) / allStints.length * 10) / 10
-    : 0
+  player.rating = calcTimeWeightedRating(allStints)
 
   // 重新排序
   coachPlayers.value.sort((a, b) => b.rating - a.rating)
@@ -1658,6 +1664,31 @@ watch(activeTab, (val) => {
 
 // 教练页定时器：实时更新上场时间 + 重算评分
 let coachTimer = null
+
+// 从 game 记录获取累计暂停毫秒数（数据库持久化，跨页面可靠）
+function getGamePausedMs() {
+  const g = game.value
+  if (!g) return 0
+  let ms = g.total_paused_ms || 0
+  // 如果当前暂停中，还要加上从 paused_at 到现在的时长
+  if (g.is_paused && g.paused_at) {
+    ms += Date.now() - new Date(g.paused_at).getTime()
+  }
+  return ms
+}
+
+function getLineupDurationSec(lineupEntry) {
+  if (!lineupEntry) return 0
+  const start = new Date(lineupEntry.on_at).getTime()
+  const end = lineupEntry.off_at ? new Date(lineupEntry.off_at).getTime() : Date.now()
+  // 只对未结束的阶段扣除暂停时间
+  let paused = 0
+  if (!lineupEntry.off_at) {
+    paused = getGamePausedMs()
+  }
+  return Math.max(0, Math.floor((end - start - paused) / 1000))
+}
+
 // 简化版评分函数（供定时器使用，与 changeStintPosition 一致）
 const TIMER_POSITION_WEIGHTS = {
   PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -0.6, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 },
@@ -1702,52 +1733,66 @@ function subscribeGameUpdates() {
       filter: `id=eq.${gameId}`
     }, (payload) => {
       if (payload.new && game.value) {
-        const oldPaused = game.value.is_paused
         game.value = { ...game.value, ...payload.new }
-        // 暂停状态变化时，启动/停止教练定时器
+        // 暂停状态变化时，启停定时器（暂停时间由数据库 total_paused_ms 追踪）
         const newPaused = !!payload.new.is_paused
-        if (oldPaused !== newPaused) {
-          if (newPaused) {
-            stopCoachTimer()
-          } else if (game.value.status === 'active') {
-            startCoachTimer()
-          }
+        if (newPaused) {
+          stopCoachTimer()
+        } else if (game.value.status === 'active') {
+          startCoachTimer()
         }
       }
     })
     .subscribe()
 }
 
+// 按时间加权平均计算总评分（直接从 on_at/off_at 计算原始秒数，不依赖暂停追踪）
+function calcTimeWeightedRating(stints) {
+  if (!stints || stints.length === 0) return 0
+  let totalWeightedRating = 0
+  let totalSeconds = 0
+  for (const stint of stints) {
+    let secs = 0
+    if (stint.on_at) {
+      const start = new Date(stint.on_at).getTime()
+      const end = stint.off_at ? new Date(stint.off_at).getTime() : Date.now()
+      secs = Math.max(0, Math.floor((end - start) / 1000))
+    }
+    if (secs <= 0) continue
+    totalWeightedRating += (stint.rating || 0) * secs
+    totalSeconds += secs
+  }
+  if (totalSeconds === 0) return 0
+  return Math.round((totalWeightedRating / totalSeconds) * 10) / 10
+}
+
 function startCoachTimer() {
   stopCoachTimer()
   coachTimer = setInterval(() => {
     if (coachPlayers.value.length === 0) return
-    const now = new Date()
+    // 暂停时不更新（但仍然保留定时器，恢复后自动继续）
+    if (game.value?.is_paused) return
     for (const player of coachPlayers.value) {
       if (!player._lineupData) continue
+      // 总上场时间 = 所有阶段有效时长之和
       let totalSec = 0
       for (const l of player._lineupData) {
-        const start = new Date(l.on_at)
-        const end = l.off_at ? new Date(l.off_at) : now
-        totalSec += Math.max(0, Math.floor((end - start) / 1000))
+        totalSec += getLineupDurationSec(l)
       }
       player.totalMinutes = formatSeconds(totalSec)
       // 更新每个阶段的时间并重算评分
       for (const stint of (player.stints || [])) {
         if (stint._lineupEntry) {
-          const s = new Date(stint._lineupEntry.on_at)
-          const e = stint._lineupEntry.off_at ? new Date(stint._lineupEntry.off_at) : now
-          stint.minutes = formatSeconds(Math.max(0, Math.floor((e - s) / 1000)))
+          const sec = getLineupDurationSec(stint._lineupEntry)
+          stint.minutes = formatSeconds(sec)
           // 用该阶段的位置重算评分
           const pos = stint.stintPosition || player.position || 'FLEX'
           quickRecalcStintRating(stint, pos)
         }
       }
-      // 重算全场评分
+      // 重算全场评分（按时间加权平均）
       const allStints = player.stints || []
-      player.rating = allStints.length > 0
-        ? Math.round(allStints.reduce((sum, s) => sum + s.rating, 0) / allStints.length * 10) / 10
-        : 0
+      player.rating = calcTimeWeightedRating(allStints)
     }
     // 重新排序
     coachPlayers.value.sort((a, b) => b.rating - a.rating)

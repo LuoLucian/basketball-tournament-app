@@ -307,13 +307,11 @@ async function startGame() {
     })
     if (error) throw error
     showToast('比赛已开始')
-    // 只更新比赛状态，不重新 loadLineup（保留比赛前已调整的阵容）
-    const { data: gameData } = await supabase
-      .from('games')
-      .select('*, home_team:home_team_id(*), away_team:away_team_id(*)')
-      .eq('id', gameId)
-      .single()
-    if (gameData) gameStore.currentGame = gameData
+    // 直接更新本地状态，不重新 loadGame（保留赛前阵容）
+    if (gameStore.currentGame) {
+      gameStore.currentGame.status = 'active'
+      gameStore.currentGame.started_at = new Date().toISOString()
+    }
   } catch (e) {
     showToast('开始失败：' + (e.message || '未知错误'))
   } finally {
@@ -345,12 +343,14 @@ async function endGame() {
 async function togglePause() {
   const newVal = !isPaused.value
   try {
-    const { error } = await supabase
-      .from('games')
-      .update({ is_paused: newVal })
-      .eq('id', gameId)
+    const { error } = await supabase.rpc('update_game_status', {
+      p_game_id: gameId,
+      p_status: gameStore.currentGame.status,
+      p_is_paused: newVal
+    })
     if (error) throw error
     isPaused.value = newVal
+    gameStore.currentGame.is_paused = newVal
     showToast(isPaused.value ? '⏸ 比赛已暂停' : '▶ 比赛继续')
   } catch (e) {
     showToast('❌ 操作失败')

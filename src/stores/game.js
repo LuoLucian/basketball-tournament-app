@@ -197,7 +197,10 @@ export const useGameStore = defineStore('game', () => {
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'game_lineup',
         filter: `game_id=eq.${gameId}`
-      }, () => loadLineup(gameId))
+      }, () => {
+        // 不再自动 loadLineup，避免覆盖 TeamPanel 的乐观更新
+        // lineup 变化由 TeamPanel 内部处理（乐观更新 + RPC）
+      })
       .subscribe((status, err) => {
         isConnected.value = status === 'SUBSCRIBED'
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
