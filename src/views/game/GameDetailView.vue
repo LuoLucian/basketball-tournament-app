@@ -599,8 +599,10 @@
               </div>
               <div class="space-y-3">
           <div v-for="p in homeCoachPlayers" :key="p.player_id"
-            class="card p-3 border border-dark-700/50"
-            :class="isOnCourt(p.player_id) ? 'border-green-500/30 bg-green-500/5' : ''">
+            class="card p-3 border transition-colors duration-300"
+            :class="isOnCourt(p.player_id)
+              ? 'border-green-500/40 bg-green-500/[0.07] border-l-2 border-l-green-500'
+              : 'border-dark-700/30 bg-dark-800/30 opacity-70'">
             <div class="flex items-center gap-2.5 mb-2.5">
               <div class="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden border border-dark-700/50"
                 :style="{ backgroundColor: (p.team_id === game?.home_team_id ? homeColor : awayColor) + '33' }">
@@ -687,8 +689,10 @@
               </div>
               <div class="space-y-3">
           <div v-for="p in awayCoachPlayers" :key="p.player_id"
-            class="card p-3 border border-dark-700/50"
-            :class="isOnCourt(p.player_id) ? 'border-green-500/30 bg-green-500/5' : ''">
+            class="card p-3 border transition-colors duration-300"
+            :class="isOnCourt(p.player_id)
+              ? 'border-green-500/40 bg-green-500/[0.07] border-l-2 border-l-green-500'
+              : 'border-dark-700/30 bg-dark-800/30 opacity-70'">
             <div class="flex items-center gap-2.5 mb-2.5">
               <div class="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden border border-dark-700/50"
                 :style="{ backgroundColor: (p.team_id === game?.home_team_id ? homeColor : awayColor) + '33' }">
@@ -772,8 +776,10 @@
           <!-- 单队模式 -->
           <template v-else>
           <div v-for="p in filteredCoachPlayers" :key="p.player_id"
-            class="card p-3 border border-dark-700/50"
-            :class="isOnCourt(p.player_id) ? 'border-green-500/30 bg-green-500/5' : ''">
+            class="card p-3 border transition-colors duration-300"
+            :class="isOnCourt(p.player_id)
+              ? 'border-green-500/40 bg-green-500/[0.07] border-l-2 border-l-green-500'
+              : 'border-dark-700/30 bg-dark-800/30 opacity-70'">
             <div class="flex items-center gap-2.5 mb-2.5">
               <div class="w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden border border-dark-700/50"
                 :style="{ backgroundColor: (p.team_id === game?.home_team_id ? homeColor : awayColor) + '33' }">
@@ -1124,6 +1130,20 @@ function isMvpRow(stat) {
 }
 
 // 判断球员是否当前在场上
+// 固定排序：上场球员优先，备战席在后，各自内部按球衣号/名字固定（不因数据变化重排）
+function stableSortCoachPlayers(players) {
+  return [...players].sort((a, b) => {
+    const aOn = a._lineupData?.some(l => !l.off_at) ? 0 : 1
+    const bOn = b._lineupData?.some(l => !l.off_at) ? 0 : 1
+    if (aOn !== bOn) return aOn - bOn
+    // 同组内按球衣号排序，无号码按名字
+    const aNum = (a.jersey_no && !isNaN(a.jersey_no)) ? parseInt(a.jersey_no) : 999
+    const bNum = (b.jersey_no && !isNaN(b.jersey_no)) ? parseInt(b.jersey_no) : 999
+    if (aNum !== bNum) return aNum - bNum
+    return (a.name || '').localeCompare(b.name || '')
+  })
+}
+
 function isOnCourt(playerId) {
   return courtLineup.value.some(l => l.player_id === playerId)
 }
@@ -1527,7 +1547,7 @@ async function loadCoachData() {
       ...(gameStats || []).map(s => s.player_id)
     ])]
 
-    coachPlayers.value = allPlayerIds.map(pid => {
+    const result = allPlayerIds.map(pid => {
       const pInfo = playerMap[pid] || {}
       const jInfo = jerseyMap[pid] || {}
       const gs = (gameStats || []).find(s => s.player_id === pid) || {}
@@ -1586,7 +1606,9 @@ async function loadCoachData() {
       const existingPlayer = coachPlayers.value.find(p => p.player_id === pid)
       player.rating = newRating > 0 ? newRating : (existingPlayer?.rating || 0)
       return player
-    }).sort((a, b) => b.rating - a.rating)  // 按评分排序
+    })
+    // 固定排序（不因评分变化重排）
+    coachPlayers.value = stableSortCoachPlayers(result)
   } catch (e) {
     console.error('加载教练数据失败:', e)
   } finally {
@@ -1898,8 +1920,7 @@ function startCoachTimer() {
       const allStints = player.stints || []
       player.rating = calcTimeWeightedRating(allStints)
     }
-    // 重新排序
-    coachPlayers.value.sort((a, b) => b.rating - a.rating)
+    // 不实时排序，保持固定序列避免重渲染
   }, 10000)
 }
 function stopCoachTimer() {
