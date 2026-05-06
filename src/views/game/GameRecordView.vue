@@ -184,7 +184,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
@@ -216,6 +216,11 @@ const isTeamAdmin = computed(() => {
 })
 
 const isPaused = ref(false)
+
+// 监听 gameStore 中 is_paused 字段的实时变化（其他设备暂停/继续时同步）
+watch(() => gameStore.currentGame?.is_paused, (val) => {
+  if (val !== undefined) isPaused.value = !!val
+})
 
 const canRecord = computed(() => {
   if (isPaused.value) return false
@@ -253,6 +258,8 @@ onMounted(async () => {
   gameStore.actionStack = []
   try {
     await gameStore.loadGame(gameId)
+    // 从数据库同步暂停状态
+    isPaused.value = !!gameStore.currentGame?.is_paused
     gameStore.subscribeRealtime(gameId)
     // 查询指派记录员
     const { data: recData } = await supabase
@@ -335,9 +342,19 @@ async function endGame() {
   }
 }
 
-function togglePause() {
-  isPaused.value = !isPaused.value
-  showToast(isPaused.value ? '⏸ 比赛已暂停' : '▶ 比赛继续')
+async function togglePause() {
+  const newVal = !isPaused.value
+  try {
+    const { error } = await supabase
+      .from('games')
+      .update({ is_paused: newVal })
+      .eq('id', gameId)
+    if (error) throw error
+    isPaused.value = newVal
+    showToast(isPaused.value ? '⏸ 比赛已暂停' : '▶ 比赛继续')
+  } catch (e) {
+    showToast('❌ 操作失败')
+  }
 }
 
 function endQuarter() {

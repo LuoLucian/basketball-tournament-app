@@ -898,6 +898,7 @@ const auth = useAuthStore()
 const gameId = route.params.id
 
 const game = ref(null)
+const gameChannel = ref(null)  // 实时订阅频道
 const stats = ref([])
 const mvp = ref([])
 const courtLineup = ref([])  // 当前场上阵容 [{player_id, team_id, slot_no, on_at}]
@@ -1687,6 +1688,36 @@ function quickRecalcStintRating(stint, pos) {
   stint.rating = Math.round((finalScore / mins) * 10) / 10
 }
 
+// 订阅比赛实时更新（暂停状态同步等）
+function subscribeGameUpdates() {
+  if (gameChannel.value) {
+    supabase.removeChannel(gameChannel.value)
+  }
+  gameChannel.value = supabase
+    .channel(`game-detail:${gameId}`)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'games',
+      filter: `id=eq.${gameId}`
+    }, (payload) => {
+      if (payload.new && game.value) {
+        const oldPaused = game.value.is_paused
+        game.value = { ...game.value, ...payload.new }
+        // 暂停状态变化时，启动/停止教练定时器
+        const newPaused = !!payload.new.is_paused
+        if (oldPaused !== newPaused) {
+          if (newPaused) {
+            stopCoachTimer()
+          } else if (game.value.status === 'active') {
+            startCoachTimer()
+          }
+        }
+      }
+    })
+    .subscribe()
+}
+
 function startCoachTimer() {
   stopCoachTimer()
   coachTimer = setInterval(() => {
@@ -1729,6 +1760,11 @@ function stopCoachTimer() {
 // 组件卸载时清理定时器
 onUnmounted(() => {
   stopCoachTimer()
+  // 清理实时订阅
+  if (gameChannel.value) {
+    supabase.removeChannel(gameChannel.value)
+    gameChannel.value = null
+  }
 })
 
 // 删除功能
@@ -1770,6 +1806,9 @@ onMounted(async () => {
     }
     game.value = gameData
     loading.value = false
+
+    // 订阅比赛实时更新（暂停状态同步等）
+    subscribeGameUpdates()
 
     // 并行获取：两队所有球员 + 本场统计数据 + MVP + 当前场上阵容
     const [tpRes, statsRes, mvpQuery, lineupRes] = await Promise.allSettled([

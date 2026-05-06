@@ -212,6 +212,9 @@ const prevStats = ref(null)
 const allTeamMembers = ref([])
 const membersLoaded = ref(false)
 
+// 操作锁：防止快速重复点击导致重复上场/下场
+const lineupChanging = ref(false)
+
 const canRecord = computed(() => props.gameStatus === 'active' && !props.readonly)
 const canChangeLineup = computed(() => 
   props.gameStatus !== 'finished' && props.gameStatus !== 'cancelled' && !props.lineupReadonly
@@ -383,15 +386,27 @@ function record(actionType) {
 
 // 点击换人（乐观更新：先更新 UI，再异步写数据库）
 async function moveToCourt(player) {
-  if (!canChangeLineup.value) return
+  if (!canChangeLineup.value || lineupChanging.value) return
+  // 防止已经在场上的球员重复上场
+  if (courtPlayers.value.some(p => p?.id === player.id)) return
   const emptyIdx = courtPlayers.value.findIndex(s => s === null)
   if (emptyIdx < 0) return
   const slotNo = emptyIdx + 1
+  // 加锁
+  lineupChanging.value = true
   // 乐观更新 UI
   benchPlayers.value = benchPlayers.value.filter(p => p.id !== player.id)
   courtPlayers.value[emptyIdx] = player
-  // 异步写数据库
-  addPlayerToLineup(player, slotNo)
+  // 异步写数据库，失败则回滚 UI
+  const ok = await addPlayerToLineup(player, slotNo)
+  if (!ok) {
+    // 回滚：把球员放回 bench，court 恢复空位
+    courtPlayers.value[emptyIdx] = null
+    if (!benchPlayers.value.some(p => p.id === player.id)) {
+      benchPlayers.value.push(player)
+    }
+  }
+  lineupChanging.value = false
 }
 
 // 防误触：二次点击确认下场
@@ -413,17 +428,25 @@ function confirmBench(player) {
 }
 
 async function moveToBench(player) {
-  if (!canChangeLineup.value) return
+  if (!canChangeLineup.value || lineupChanging.value) return
   const idx = courtPlayers.value.findIndex(p => p?.id === player.id)
   if (idx < 0) return
+  // 加锁
+  lineupChanging.value = true
   // 乐观更新 UI
   courtPlayers.value[idx] = null
   benchPlayers.value.push(player)
   if (selectedPlayer.value?.id === player.id) {
     selectedPlayer.value = null
   }
-  // 异步写数据库
-  removePlayerFromLineup(player)
+  // 异步写数据库，失败则回滚 UI
+  const ok = await removePlayerFromLineup(player)
+  if (!ok) {
+    // 回滚：把球员放回 court，bench 移除
+    benchPlayers.value = benchPlayers.value.filter(p => p.id !== player.id)
+    courtPlayers.value[idx] = player
+  }
+  lineupChanging.value = false
 }
 
 // ── 数据库（通过 RPC 绕过 RLS）──
