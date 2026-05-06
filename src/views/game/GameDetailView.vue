@@ -1431,89 +1431,90 @@ async function loadCoachData() {
         ftaMiss * w.fta_miss
 
       if (minutes && minutes > 0) {
-        // 第二步：上下文感知调整（业余友好版）
+        // 第二步：上下文感知调整
         let contextBonus = 0
 
         if (teamPointsGained > 0) {
           // 球员得分占球队得分比例（贡献度）
           const contributionRatio = Math.min((s.pts || 0) / teamPointsGained, 1)
-          // 业余比赛得分更分散，降低阈值
           if (contributionRatio >= 0.20) {
             contextBonus = 1.5  // 核心贡献者
           } else if (contributionRatio >= 0.10) {
             contextBonus = 0.5  // 正常贡献
           } else if (contributionRatio > 0) {
-            contextBonus = -0.3  // 贡献偏低（轻微）
+            contextBonus = -0.3  // 贡献偏低
           } else {
-            contextBonus = -1.0  // 零贡献（降低惩罚）
+            contextBonus = -2.0  // 零贡献惩罚（加大）
           }
 
-          // 位置特色奖励（降低门槛）
+          // 位置特色奖励
           const focus = POSITION_FOCUS[pos] || POSITION_FOCUS.FLEX
           const offVal = s[focus.offense] || 0
           const defVal = s[focus.defense] || 0
           const offPerMin = offVal / minutes
           const defPerMin = defVal / minutes
-          if (offPerMin >= 0.5) contextBonus += 0.8   // 降低门槛
-          if (defPerMin >= 0.3) contextBonus += 0.5   // 降低门槛
+          if (offPerMin >= 0.5) contextBonus += 0.8
+          if (defPerMin >= 0.3) contextBonus += 0.5
         } else {
           // 球队没有得分变化
           const defFocus = POSITION_FOCUS[pos]?.defense || 'reb'
           const defVal = s[defFocus] || 0
           if (defVal > 0) {
-            contextBonus = 0.3  // 防守端有贡献
+            contextBonus = 0.3
           } else if (minutes >= 3) {
-            contextBonus = -0.8  // 降低惩罚，提高时间门槛
+            contextBonus = -1.5  // 上场较久但无贡献（加大惩罚）
           }
         }
 
-        // 第三步：净效率奖励/惩罚（对比上场前后，降低幅度）
+        // 第三步：净效率奖励/惩罚
         let impactBonus = 0
         const netEff = netEfficiency || 0
         const beforeNet = beforeNetRate || 0
         const netImprovement = netEff - beforeNet
 
         if (netEff > 0) {
-          impactBonus += 1.0  // 基础奖励（降低）
+          impactBonus += 1.0
           if (netImprovement > 0) {
-            impactBonus += Math.min(netImprovement * 0.3, 1.5)  // 降低系数和上限
+            impactBonus += Math.min(netImprovement * 0.3, 1.5)
           }
         } else if (netEff < 0) {
           if (netImprovement < 0) {
-            impactBonus -= Math.min(Math.abs(netImprovement) * 0.3, 1.0)  // 降低惩罚
+            impactBonus -= Math.min(Math.abs(netImprovement) * 0.3, 1.0)
           }
           if ((oppPointsGained || 0) > (teamPointsGained || 0) * 1.5) {
-            impactBonus -= 0.5  // 降低惩罚
+            impactBonus -= 0.5
           }
         }
 
         // 防守型位置（PF/C）额外防守奖励
         if (['PF', 'C'].includes(pos)) {
           if ((oppPointsGained || 0) === 0 && minutes >= 2) {
-            impactBonus += 1.0  // 降低
+            impactBonus += 1.0
           }
           const defActions = (s.blk || 0) + (s.stl || 0)
-          if (defActions >= 1 && netEff >= 0) {  // 降低门槛：1次就够了
+          if (defActions >= 1 && netEff >= 0) {
             impactBonus += 0.8
           }
         }
 
-        // 第四步：时间补偿
+        // 第四步：时间补偿（减弱衰减：用 minutes^0.7 代替 minutes）
         let timeModifier = 1.0
         if (minutes <= 2) timeModifier = 1.4
         else if (minutes <= 5) timeModifier = 1.2
         else if (minutes >= 15) timeModifier = 0.95
 
-        // 第五步：业余友好底薪（有贡献才给底薪，零贡献不给）
+        // 第五步：底薪（有贡献才给，零贡献不给）
         let baseScore = 0
         const hasContribution = (s.pts || 0) > 0 || (s.reb || 0) > 0 || (s.ast || 0) > 0
           || (s.stl || 0) > 0 || (s.blk || 0) > 0
         if (hasContribution) {
-          baseScore = 0.5 * minutes  // 每分钟 +0.5 底薪（降低）
+          baseScore = 0.5 * minutes
         }
 
         const finalScore = (rawScore + contextBonus + impactBonus + baseScore) * timeModifier
-        return Math.round((finalScore / minutes) * 10) / 10
+        // 用 minutes^0.7 减弱时间衰减（长时间上场不会过度稀释评分）
+        const adjustedMinutes = Math.pow(minutes, 0.7)
+        return Math.round((finalScore / adjustedMinutes) * 10) / 10
       }
 
       return Math.round(rawScore * 10) / 10
@@ -1719,7 +1720,16 @@ function quickRecalcStintRating(stint, pos) {
   stint.rating = Math.round((finalScore / mins) * 10) / 10
 }
 
-// 订阅比赛实时更新（暂停状态同步等）
+// 防抖：避免短时间内多次录入触发过多 loadCoachData
+let coachDataDebounce = null
+function debouncedLoadCoachData() {
+  if (coachDataDebounce) clearTimeout(coachDataDebounce)
+  coachDataDebounce = setTimeout(() => {
+    if (activeTab.value === 'coach') loadCoachData()
+  }, 2000)
+}
+
+// 订阅比赛实时更新（暂停状态同步 + 教练数据同步）
 function subscribeGameUpdates() {
   if (gameChannel.value) {
     supabase.removeChannel(gameChannel.value)
@@ -1742,6 +1752,33 @@ function subscribeGameUpdates() {
           startCoachTimer()
         }
       }
+    })
+    // 监听 action_logs 变化（录入端新增操作时触发）
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'action_logs',
+      filter: `game_id=eq.${gameId}`
+    }, () => {
+      debouncedLoadCoachData()
+    })
+    // 监听 game_stats 变化（统计数据更新时触发）
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'game_stats',
+      filter: `game_id=eq.${gameId}`
+    }, () => {
+      debouncedLoadCoachData()
+    })
+    // 监听 game_lineup 变化（换人时触发）
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'game_lineup',
+      filter: `game_id=eq.${gameId}`
+    }, () => {
+      debouncedLoadCoachData()
     })
     .subscribe()
 }
