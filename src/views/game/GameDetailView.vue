@@ -1847,8 +1847,7 @@ function incrementalUpdatePlayerStats(actionLog) {
   // 重新计算全场评分
   player.rating = calcTimeWeightedRating(player.stints)
 
-  // 重新排序（可选：如果不需要实时排序可以注释掉）
-  coachPlayers.value.sort((a, b) => b.rating - a.rating)
+  // 注意：不实时排序，避免整个列表重渲染。排序只在切换tab或定时器触发时进行
 }
 
 // 按时间加权平均计算总评分（直接从 on_at/off_at 计算原始秒数，不依赖暂停追踪）
