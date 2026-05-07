@@ -1589,24 +1589,25 @@ async function loadCoachData() {
         if (!lineupEntry && stint.lineup_id) {
           console.warn('[loadCoachData] lineup_id 匹配失败! pid:', pid, 'stintIndex:', idx+1, 'lineup_id:', stint.lineup_id, 'playerLineupData IDs:', playerLineupData.map(l => l.id))
         }
-        // 调试：对在场球员打印 paused_ms_at_on
+        // 对于在场球员，用与定时器相同的公式计算 rawDuration（确保扣除暂停）
+        let effectiveRawDuration = stint.duration || 0
         if (!stint.off_at && lineupEntry) {
-          console.log('[loadCoachData] 在场球员 stint:', pInfo.name, 'stintIndex:', idx+1, 
-            'lineup_id:', stint.lineup_id, 
-            'paused_ms_at_on:', lineupEntry.paused_ms_at_on, 
-            'on_at:', lineupEntry.on_at,
-            'duration:', stint.duration, 'rawDuration:', stint.rawDuration)
+          const onAtMs = new Date(lineupEntry.on_at).getTime()
+          const pausedMsAtOn = lineupEntry.paused_ms_at_on || 0
+          const currentPausedMs = getGamePausedMs()
+          const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
+          effectiveRawDuration = Math.max(0, Math.floor((Date.now() - onAtMs - pausedSinceOn) / 1000))
         }
         return {
           stintIndex: idx + 1,
           quarter: stint.quarter,
-          minutes: formatSeconds(stint.duration),
+          minutes: formatSeconds(effectiveRawDuration),
           on_at: stint.on_at,
           off_at: stint.off_at,
           ...stint.stats,
           rating: calcRating(stint.stats, pos, stintMins, stint.teamPointsGained, stint.oppPointsGained, stint.netEfficiency, stint.beforeNetRate),
           _lineupEntry: lineupEntry || null,
-          rawDuration: stint.duration || 0  // 初始化已累计秒数
+          rawDuration: effectiveRawDuration
         }
       })
 
@@ -1909,10 +1910,17 @@ function subscribeGameUpdates() {
                   // 只添加新增的阶段，保留已有的
                   for (let i = currentStintCount; i < playerLineupCount; i++) {
                     const l = playerLineup[i]
-                    const duration = l.off_at
-                      ? Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
-                      : Math.max(0, Math.floor((Date.now() - new Date(l.on_at).getTime()) / 1000))
-                    console.log('[Realtime] 添加新阶段: 球员', player.name, '阶段', i+1, 'on_at:', l.on_at, 'off_at:', l.off_at, 'duration:', duration)
+                    // 使用与定时器相同的公式计算 duration（扣除暂停）
+                    let duration
+                    if (l.off_at) {
+                      duration = Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
+                    } else {
+                      const onAtMs = new Date(l.on_at).getTime()
+                      const pausedMsAtOn = l.paused_ms_at_on || 0
+                      const currentPausedMs = getGamePausedMs()
+                      const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
+                      duration = Math.max(0, Math.floor((Date.now() - onAtMs - pausedSinceOn) / 1000))
+                    }
                     player.stints.push({
                       stintIndex: i + 1,
                       quarter: l.quarter || 1,
@@ -1933,34 +1941,35 @@ function subscribeGameUpdates() {
               }
             } else {
               // 新球员不在 coachPlayers 中，快速添加一个简版记录
-              console.log('[Realtime] 新球员上场: player_id:', al.player_id, 'team_id:', al.team_id)
               const playerLineup = newLineup.filter(l => l.player_id === al.player_id)
-              const totalDuration = playerLineup.reduce((sum, l) => {
-                const dur = l.off_at
-                  ? Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
-                  : Math.max(0, Math.floor((Date.now() - new Date(l.on_at).getTime()) / 1000))
-                return sum + dur
-              }, 0)
+              const currentPausedMs = getGamePausedMs()
+              const calcStintDuration = (l) => {
+                if (l.off_at) {
+                  return Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
+                }
+                const onAtMs = new Date(l.on_at).getTime()
+                const pausedMsAtOn = l.paused_ms_at_on || 0
+                const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
+                return Math.max(0, Math.floor((Date.now() - onAtMs - pausedSinceOn) / 1000))
+              }
+              const totalDuration = playerLineup.reduce((sum, l) => sum + calcStintDuration(l), 0)
 
-              const stints = playerLineup.map((l, idx) => ({
-                stintIndex: idx + 1,
-                quarter: l.quarter || 1,
-                minutes: formatSeconds(
-                  l.off_at
-                    ? Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
-                    : Math.max(0, Math.floor((Date.now() - new Date(l.on_at).getTime()) / 1000))
-                ),
-                on_at: l.on_at,
-                off_at: l.off_at || null,
-                pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
-                fgm: 0, fga: 0, ftm: 0, fta: 0,
-                rating: 0,
-                _lineupEntry: l,
-                rawDuration: l.off_at
-                  ? Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
-                  : Math.max(0, Math.floor((Date.now() - new Date(l.on_at).getTime()) / 1000)),
-                team_id: l.team_id
-              }))
+              const stints = playerLineup.map((l, idx) => {
+                const dur = calcStintDuration(l)
+                return {
+                  stintIndex: idx + 1,
+                  quarter: l.quarter || 1,
+                  minutes: formatSeconds(dur),
+                  on_at: l.on_at,
+                  off_at: l.off_at || null,
+                  pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
+                  fgm: 0, fga: 0, ftm: 0, fta: 0,
+                  rating: 0,
+                  _lineupEntry: l,
+                  rawDuration: dur,
+                  team_id: l.team_id
+                }
+              })
 
               coachPlayers.value.push({
                 player_id: al.player_id,
@@ -1991,8 +2000,8 @@ function subscribeGameUpdates() {
         console.log('[Realtime] 开始 loadCoachData 全量刷新, 时间:', new Date().toISOString())
         await loadCoachData()
         console.log('[Realtime] loadCoachData 完成, 时间:', new Date().toISOString())
-        // 全量数据加载后重启定时器，确保数据一致
-        if (game.value?.status === 'active' && !game.value.is_paused) {
+        // 全量数据加载后，如果定时器未运行则启动（不重启已有的定时器，避免1秒空白）
+        if (game.value?.status === 'active' && !game.value.is_paused && !coachTimer) {
           startCoachTimer()
         }
       }
@@ -2137,26 +2146,6 @@ function startCoachTimer() {
       // 只更新在场球员（有未结束的上场阶段）
       const activeStints = (player.stints || []).filter(s => !s.off_at)
       if (activeStints.length === 0) continue  // 备战席球员跳过
-
-      // 调试：对有新阶段的球员打印定时器状态
-      if (activeStints.some(s => s.rawDuration <= 2 && !s.off_at)) {
-        const s = activeStints[activeStints.length-1]
-        const onAtMs = new Date(s._lineupEntry?.on_at || s.on_at).getTime()
-        const pausedMsAtOn = s._lineupEntry?.paused_ms_at_on || 0
-        const currentPausedMs = getGamePausedMs()
-        const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
-        const elapsed = Date.now() - onAtMs
-        console.log('[Timer] 球员:', player.name, 
-          'on_at:', s._lineupEntry?.on_at || s.on_at,
-          'onAtMs:', onAtMs, 
-          'Date.now():', Date.now(), 
-          'elapsed_ms:', elapsed,
-          'pausedMsAtOn:', pausedMsAtOn, 
-          'currentPausedMs:', currentPausedMs,
-          'pausedSinceOn:', pausedSinceOn,
-          'rawSec:', Math.max(0, Math.floor((elapsed - pausedSinceOn) / 1000)),
-          'rawDuration:', s.rawDuration)
-      }
 
       hasUpdate = true
       // 重新计算每个在场阶段的有效时间（基于 on_at，扣除暂停）
