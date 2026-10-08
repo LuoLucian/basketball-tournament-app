@@ -51,12 +51,21 @@
           <!-- 中间信息 -->
           <div class="flex flex-col items-center px-4">
             <div class="text-dark-600 text-lg font-light tracking-widest">VS</div>
+            <!-- 待同步提示 -->
+            <div v-if="gameStore.pendingCount > 0" class="flex items-center gap-1 mt-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"></span>
+              <span class="text-[10px] text-yellow-400">{{ gameStore.pendingCount }}条待同步</span>
+            </div>
             <div v-if="gameStore.currentGame.game_type === 'entertainment'" class="text-xs text-dark-500 text-center mt-1">
               目标 <span class="text-accent-400 font-bold">{{ gameStore.currentGame.target_score }}</span> 分
+              <span class="text-dark-600 mx-0.5">·</span>第 <span class="text-white font-bold">{{ virtualQuarter }}</span> 节
             </div>
             <div v-else class="text-sm text-white font-semibold mt-1">
               Q{{ gameStore.currentGame.current_quarter }}
-              <span class="text-xs text-dark-400 ml-1">{{ fmtClock(gameStore.currentGame.quarter_clock || 0) }}</span>
+              <span class="text-xs ml-1 tabular-nums"
+                :class="remainingSecs <= 60 && clockRunning ? 'text-danger-light font-bold animate-pulse' : 'text-dark-400'">
+                {{ fmtClock(remainingSecs) }}
+              </span>
             </div>
           </div>
 
@@ -74,56 +83,77 @@
       </div>
 
       <!-- 操控按钮区 -->
-      <div class="px-3 py-2 flex items-center gap-2 border-b border-dark-700/30 bg-dark-850/50">
+      <div class="px-2 sm:px-3 py-2 flex items-center gap-1.5 sm:gap-2 border-b border-dark-700/30 bg-dark-850/50">
         <!-- 开始 -->
         <button v-if="gameStore.currentGame.status === 'pending'" @click="startGame" :disabled="starting || !canManageGame"
-          class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
+          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
           :class="starting ? 'bg-green-800 text-green-300 cursor-wait' : 'bg-green-600 text-white'">
-          {{ starting ? '开始中...' : '开始' }}
+          {{ starting ? '开始中' : '开始' }}
         </button>
 
         <!-- 结束 -->
         <button v-if="gameStore.currentGame.status === 'active'" @click="endGame" :disabled="ending || !canManageGame"
-          class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
+          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
           :class="ending ? 'bg-red-800 text-red-300 cursor-wait' : 'bg-red-600 text-white'">
-          {{ ending ? '结束中...' : '结束' }}
+          {{ ending ? '结束中' : '结束' }}
         </button>
 
-        <!-- 暂停/继续 -->
+        <!-- 暂停/继续（正式制节间休息时显示"开始第X节"） -->
         <button v-if="gameStore.currentGame.status === 'active'" @click="togglePause"
-          class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
+          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
           :class="isPaused ? 'bg-yellow-600 text-white' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'">
-          {{ isPaused ? '▶ 继续' : '⏸ 暂停' }}
+          {{ isPaused ? (quarterBreak ? `▶开始第${gameStore.currentGame.current_quarter}节` : '▶继续') : '⏸暂停' }}
         </button>
 
-        <!-- 本节结束（仅正式制） -->
-        <button v-if="gameStore.currentGame.status === 'active' && gameStore.currentGame.game_type !== 'entertainment'" @click="endQuarter"
+        <!-- 强制同步 -->
+        <button @click="handleForceSync" :disabled="syncing"
+          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
+          :class="syncing ? 'bg-dark-800 text-dark-600 cursor-not-allowed' : 'bg-blue-600/80 text-white hover:bg-blue-600'">
+          {{ syncing ? '同步中' : '⬆同步' }}
+        </button>
+
+        <!-- 本节结束（仅正式制，手机端和电脑端都显示） -->
+        <button v-if="gameStore.currentGame.status === 'active' && gameStore.currentGame.game_type !== 'entertainment'" @click="endQuarter()"
           :disabled="!canManageGame || isPaused"
-          class="px-3 py-1 rounded-md text-[11px] font-bold transition-all active:scale-95"
+          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
           :class="isPaused ? 'bg-dark-800 text-dark-600 cursor-not-allowed' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'">
           本节结束
         </button>
 
         <div class="flex-1"></div>
 
-        <!-- 状态 -->
-        <div v-if="isPaused" class="flex items-center gap-1 text-yellow-400 text-[10px] flex-shrink-0">
-          <span class="w-1 h-1 rounded-full bg-yellow-400"></span>
-          已暂停
+        <!-- 录队切换 -->
+        <div class="flex items-center gap-0.5 sm:gap-1 mr-1 sm:mr-2">
+          <button v-for="opt in recordModeOptions" :key="opt.value"
+            @click="recordMode = opt.value"
+            class="px-1.5 sm:px-2 py-1.5 sm:py-1 rounded-md text-[9px] sm:text-[10px] font-bold transition-all whitespace-nowrap"
+            :class="recordMode === opt.value
+              ? 'bg-primary-600 text-white'
+              : 'bg-dark-800 text-dark-400 hover:text-white'">
+            {{ opt.label }}
+          </button>
         </div>
-        <div v-else-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[10px] flex-shrink-0">
+
+        <!-- 状态 -->
+        <div v-if="isPaused" class="flex items-center gap-1 text-yellow-400 text-[9px] sm:text-[10px] flex-shrink-0">
+          <span class="w-1 h-1 rounded-full bg-yellow-400"></span>
+          <span class="hidden sm:inline">已暂停</span>
+          <span class="sm:hidden">暂停</span>
+        </div>
+        <div v-else-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[9px] sm:text-[10px] flex-shrink-0">
           <span class="w-1 h-1 rounded-full bg-green-400 animate-pulse"></span>
           LIVE
         </div>
-        <div v-if="gameStore.currentGame.status === 'finished'" class="text-primary-400 text-[10px] flex-shrink-0">
+        <div v-if="gameStore.currentGame.status === 'finished'" class="text-primary-400 text-[9px] sm:text-[10px] flex-shrink-0">
           已结束
         </div>
       </div>
 
       <!-- 主内容：两队面板 -->
-      <div class="flex gap-0 overflow-x-auto pb-20 md:pb-4" style="min-height: calc(100vh - 280px)">
+      <div class="flex gap-0 overflow-hidden" style="height: calc(100vh - 280px);">
         <!-- 主队面板 -->
         <TeamPanel
+          v-show="recordMode === 'both' || recordMode === 'home'"
           ref="homePanelRef"
           :team="gameStore.currentGame.home_team"
           :lineup="gameStore.homeLineup"
@@ -131,9 +161,11 @@
           :team-id="gameStore.currentGame.home_team_id"
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
+          :team-fouls="teamFouls.home"
           :readonly="!canRecord"
           :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
+          :record-only="recordMode !== 'both'"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
           @undo="undoAction"
@@ -141,10 +173,11 @@
         />
 
         <!-- 分隔线 -->
-        <div class="w-px bg-dark-700/50 flex-shrink-0"></div>
+        <div v-if="recordMode === 'both'" class="w-px bg-dark-700/50 flex-shrink-0"></div>
 
         <!-- 客队面板 -->
         <TeamPanel
+          v-show="recordMode === 'both' || recordMode === 'away'"
           ref="awayPanelRef"
           :team="gameStore.currentGame.away_team"
           :lineup="gameStore.awayLineup"
@@ -152,9 +185,11 @@
           :team-id="gameStore.currentGame.away_team_id"
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
+          :team-fouls="teamFouls.away"
           :readonly="!canRecord"
           :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
+          :record-only="recordMode !== 'both'"
           @record="handleRecord"
           @lineup-change="handleLineupChange"
           @undo="undoAction"
@@ -201,10 +236,91 @@ const loading = ref(true)
 const toastMsg = ref('')
 const starting = ref(false)
 const ending = ref(false)
+const recordMode = ref('both')
+const recordModeOptions = [
+  { value: 'both', label: '两队' },
+  { value: 'home', label: '仅主队' },
+  { value: 'away', label: '仅客队' }
+]
 let toastTimer
 
 const homePanelRef = ref(null)
 const awayPanelRef = ref(null)
+const syncing = ref(false)
+
+// ── 队伍犯规（本节）──
+const teamFouls = ref({ home: 0, away: 0 })
+const virtualQuarter = ref(1)   // 娱乐赛虚拟节（领先方得分每满 target/4 分切节）
+
+async function loadTeamFouls() {
+  const g = gameStore.currentGame
+  if (!g) return
+  const { data } = await supabase
+    .from('action_logs')
+    .select('action_type, delta, team_id, quarter')
+    .eq('game_id', gameId)
+    .in('action_type', ['pf', 'pts_1', 'pts_2', 'pts_3'])
+    .order('created_at', { ascending: true })
+  const logs = data || []
+
+  // 离线队列中尚未入库的犯规
+  const pendingPf = { home: 0, away: 0 }
+  for (const a of gameStore.pendingActions) {
+    if (a.p_action_type !== 'pf' || a.p_game_id !== gameId) continue
+    if (a.p_team_id === g.home_team_id) pendingPf.home += a.p_delta || 1
+    else pendingPf.away += a.p_delta || 1
+  }
+
+  if (g.game_type === 'entertainment') {
+    // 娱乐赛：领先方得分每满 target/4 分进入下一虚拟节，犯规随之重置
+    const perQ = Math.max(1, Math.round((g.target_score || 120) / 4))
+    const vqOf = (lead) => Math.min(4, Math.floor(lead / perQ) + 1)
+    let home = 0, away = 0
+    const pfByVq = {}
+    for (const log of logs) {
+      if (log.action_type === 'pf') {
+        const vq = vqOf(Math.max(home, away))
+        if (!pfByVq[vq]) pfByVq[vq] = { home: 0, away: 0 }
+        if (log.team_id === g.home_team_id) pfByVq[vq].home += log.delta || 1
+        else pfByVq[vq].away += log.delta || 1
+      } else {
+        const pts = (log.action_type === 'pts_1' ? 1 : log.action_type === 'pts_2' ? 2 : 3) * (log.delta || 1)
+        if (log.team_id === g.home_team_id) home += pts
+        else away += pts
+      }
+    }
+    const curVq = vqOf(Math.max(g.home_score || 0, g.away_score || 0))
+    virtualQuarter.value = curVq
+    teamFouls.value = {
+      home: (pfByVq[curVq]?.home || 0) + pendingPf.home,
+      away: (pfByVq[curVq]?.away || 0) + pendingPf.away
+    }
+  } else {
+    // 正式赛：按 action_logs 记录的节次统计
+    const q = g.current_quarter || 1
+    let h = 0, a = 0
+    for (const log of logs) {
+      if (log.action_type !== 'pf' || (log.quarter || 1) !== q) continue
+      if (log.team_id === g.home_team_id) h += log.delta || 1
+      else a += log.delta || 1
+    }
+    teamFouls.value = { home: h + pendingPf.home, away: a + pendingPf.away }
+  }
+}
+
+async function handleForceSync() {
+  if (syncing.value) return
+  syncing.value = true
+  try {
+    const result = await gameStore.forceSyncToServer()
+    showToast(result.message)
+    loadTeamFouls()
+  } catch (e) {
+    showToast('同步失败：' + e.message)
+  } finally {
+    syncing.value = false
+  }
+}
 
 // ── 权限逻辑 ──
 const isTeamAdmin = computed(() => {
@@ -217,6 +333,41 @@ const isTeamAdmin = computed(() => {
 
 const isPaused = ref(false)
 
+// ── 正式制倒计时 ──
+const isOfficial = computed(() => gameStore.currentGame?.game_type === 'official')
+const clockRunning = computed(() =>
+  isOfficial.value && gameStore.currentGame?.status === 'active' && !isPaused.value
+)
+const nowTs = ref(Date.now())
+const quarterBreak = ref(false)   // 节间休息标记（切节后由 RPC 置为暂停）
+const endingQuarter = ref(false)
+let clockTimer = null
+let autoEndFired = false         // 归零自动切节防重
+
+// 剩余秒数：以数据库 quarter_clock 为基准，用 clock_updated_at 推算已流逝时间（暂停期间不走秒）
+const remainingSecs = computed(() => {
+  const g = gameStore.currentGame
+  if (!g || !isOfficial.value) return 0
+  const base = g.quarter_clock ?? 0
+  if (!clockRunning.value) return base
+  if (!g.clock_updated_at) return base
+  const anchor = new Date(g.clock_updated_at).getTime()
+  if (!anchor || Number.isNaN(anchor)) return base
+  // elapsed 钳制为非负：数据库时钟与本地偏差会让差值为负，floor 后变 -1 导致显示多 1 秒
+  const elapsed = Math.max(0, Math.floor((nowTs.value - anchor) / 1000))
+  return Math.max(0, base - elapsed)
+})
+
+// 倒计时归零 → 自动结束本节（切到下一节或全场结束）
+watch(remainingSecs, (v) => {
+  if (v === 0 && clockRunning.value && !autoEndFired && !endingQuarter.value) {
+    autoEndFired = true
+    endQuarter(true)
+  }
+})
+// 切节 / 恢复后允许再次自动切节
+watch(() => gameStore.currentGame?.current_quarter, () => { autoEndFired = false })
+
 // 监听 gameStore 中 is_paused 字段的实时变化（其他设备暂停/继续时同步）
 watch(() => gameStore.currentGame?.is_paused, (val) => {
   if (val !== undefined) isPaused.value = !!val
@@ -228,8 +379,8 @@ const canRecord = computed(() => {
   if (['finished', 'cancelled'].includes(gameStore.currentGame.status)) return false
   const uid = auth.user?.id
   if (!uid) return false
-  const isAssigned = assignedRecorders.value.some(r => r.recorder_id === uid)
-  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value || isAssigned
+  // 管理员、记录员角色、球队管理员都可以录入
+  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value
 })
 
 const canManageGame = computed(() => {
@@ -237,8 +388,7 @@ const canManageGame = computed(() => {
   if (['finished', 'cancelled'].includes(gameStore.currentGame.status)) return false
   const uid = auth.user?.id
   if (!uid) return false
-  const isAssigned = assignedRecorders.value.some(r => r.recorder_id === uid)
-  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value || isAssigned
+  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value
 })
 
 // 阵容调整权限（不受暂停影响）
@@ -247,26 +397,20 @@ const canManageLineup = computed(() => {
   if (['finished', 'cancelled'].includes(gameStore.currentGame.status)) return false
   const uid = auth.user?.id
   if (!uid) return false
-  const isAssigned = assignedRecorders.value.some(r => r.recorder_id === uid)
-  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value || isAssigned
+  return auth.isAdmin || auth.role === 'recorder' || isTeamAdmin.value
 })
-
-const assignedRecorders = ref([])
 
 onMounted(async () => {
   // 确保清空上一场比赛的操作栈
   gameStore.actionStack = []
+  clockTimer = setInterval(() => { nowTs.value = Date.now() }, 1000)
   try {
     await gameStore.loadGame(gameId)
     // 从数据库同步暂停状态
     isPaused.value = !!gameStore.currentGame?.is_paused
     gameStore.subscribeRealtime(gameId)
-    // 查询指派记录员
-    const { data: recData } = await supabase
-      .from('game_recorders')
-      .select('recorder_id')
-      .eq('game_id', gameId)
-    assignedRecorders.value = recData || []
+    gameStore.startPeriodicSync()
+    loadTeamFouls()
   } catch (e) {
     console.error('加载比赛失败:', e)
   } finally {
@@ -274,20 +418,30 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => {
-  gameStore.unsubscribeRealtime()
+// 比分 / 节次变化时刷新队伍犯规（娱乐赛虚拟节随领先方得分切换；其他设备录入也走这里）
+let foulsTimer = null
+watch(() => [gameStore.currentGame?.home_score, gameStore.currentGame?.away_score, gameStore.currentGame?.current_quarter], () => {
+  clearTimeout(foulsTimer)
+  foulsTimer = setTimeout(loadTeamFouls, 400)
 })
 
-async function handleRecord({ playerId, teamId, actionType, playerName }) {
-  try {
-    await gameStore.recordAction(playerId, teamId, actionType, 1, playerName)
-    showToast(actionLabel(actionType))
-    // 刷新两个面板的实时数据
-    homePanelRef.value?.refreshStats()
-    awayPanelRef.value?.refreshStats()
-  } catch (e) {
-    showToast('❌ ' + (e.message || '录入失败'))
-  }
+onUnmounted(() => {
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null }
+  gameStore.unsubscribeRealtime()
+  gameStore.stopPeriodicSync()
+})
+
+// 录分：本地状态在 recordAction 内同步更新（乐观更新），不等待网络往返
+// 网络写入在后台进行，失败自动进入离线队列，按钮点击始终秒响应
+function handleRecord({ playerId, teamId, actionType, playerName }) {
+  gameStore.recordAction(playerId, teamId, actionType, 1, playerName).catch(e => {
+    console.warn('[handleRecord] 后台同步失败（已入队）:', e?.message)
+  })
+  showToast(actionLabel(actionType))
+  // 刷新两个面板的实时数据（读的是本地 store，立即生效）
+  homePanelRef.value?.refreshStats()
+  awayPanelRef.value?.refreshStats()
+  loadTeamFouls()
 }
 
 // 阵容变化回调（拖拽换人后由 TeamPanel 内部处理数据库，这里只同步 slot_no）
@@ -311,7 +465,13 @@ async function startGame() {
     if (gameStore.currentGame) {
       gameStore.currentGame.status = 'active'
       gameStore.currentGame.started_at = new Date().toISOString()
+      gameStore.currentGame.clock_updated_at = new Date().toISOString()
     }
+    // 全员快照：所有注册球员立即拥有 game_stats 行，排行榜马上可见全员
+    supabase.rpc('snapshot_game_players', { p_game_id: gameId })
+      .then(({ error: snapErr }) => {
+        if (snapErr) console.warn('[snapshot] 全员快照失败:', snapErr.message)
+      })
   } catch (e) {
     showToast('开始失败：' + (e.message || '未知错误'))
   } finally {
@@ -342,24 +502,71 @@ async function endGame() {
 
 async function togglePause() {
   const newVal = !isPaused.value
+  // 必须在翻转 isPaused 之前取值：翻转后 remainingSecs 会切回旧基准值，导致显示闪跳
+  const frozenSecs = remainingSecs.value
   try {
-    const { error } = await supabase.rpc('update_game_status', {
+    const params = {
       p_game_id: gameId,
       p_status: gameStore.currentGame.status,
       p_is_paused: newVal
-    })
+    }
+    // 正式制暂停时固化当前剩余秒数，恢复后从暂停点继续走秒
+    if (newVal && isOfficial.value) params.p_clock_remaining = frozenSecs
+    const { error } = await supabase.rpc('update_game_status', params)
     if (error) throw error
     isPaused.value = newVal
     gameStore.currentGame.is_paused = newVal
+    if (isOfficial.value) {
+      // 暂停：写入冻结秒数；恢复：重置基准时间，避免用暂停期间的旧锚点倒扣
+      if (newVal) gameStore.currentGame.quarter_clock = frozenSecs
+      gameStore.currentGame.clock_updated_at = new Date().toISOString()
+    }
+    if (!newVal) quarterBreak.value = false  // 恢复 = 开始下一节 / 继续比赛
     showToast(isPaused.value ? '⏸ 比赛已暂停' : '▶ 比赛继续')
   } catch (e) {
     showToast('❌ 操作失败')
   }
 }
 
-function endQuarter() {
-  if (!confirm('确认结束本节？将暂停录入。')) return
-  isPaused.value = true
+async function endQuarter(auto = false) {
+  if (endingQuarter.value) return
+  if (!auto && !confirm('确认结束本节？将进入节间休息。')) return
+  endingQuarter.value = true
+  try {
+    const fromQ = gameStore.currentGame?.current_quarter || 1
+    const { data, error } = await supabase.rpc('end_quarter', {
+      p_game_id: gameId,
+      p_from_quarter: fromQ
+    })
+    if (error) throw error
+    // 乐观锁冲突：其他设备已切节，同步状态即可
+    if (data?.stale) {
+      showToast(`其他设备已切换至第${data.quarter}节`)
+      await gameStore.loadGame(gameId)
+      return
+    }
+    if (data?.finished) {
+      showToast('🏆 全场比赛结束')
+      await gameStore.loadGame(gameId)
+      await supabase.rpc('snapshot_game_players', { p_game_id: gameId })
+      await calcMvp()
+    } else {
+      // 进入第 data.quarter 节，节间休息（RPC 已置 is_paused=TRUE，realtime 会同步到其他设备）
+      quarterBreak.value = true
+      isPaused.value = true
+      if (gameStore.currentGame) {
+        gameStore.currentGame.current_quarter = data.quarter
+        gameStore.currentGame.quarter_clock = gameStore.currentGame.quarter_seconds || 600
+        gameStore.currentGame.is_paused = true
+        gameStore.currentGame.clock_updated_at = new Date().toISOString()
+      }
+      showToast(`⏱ 第${fromQ}节结束，休息后开始第${data.quarter}节`)
+    }
+  } catch (e) {
+    showToast('❌ 切节失败：' + (e.message || '未知错误'))
+  } finally {
+    endingQuarter.value = false
+  }
 }
 
 async function calcMvp() {
@@ -398,17 +605,17 @@ function showToast(msg) {
 
 const lastUndoAction = computed(() => gameStore.actionStack)
 
-async function undoAction(action) {
-  try {
-    await gameStore.undoAction(action)
-    const desc = action ? `↩ 已撤销：${action.player_name || ''} ${actionLabel(action.actionType || action.action_type || '')}` : '↩ 已撤销'
-    showToast(desc)
-    // 刷新两个面板的实时数据
-    homePanelRef.value?.refreshStats()
-    awayPanelRef.value?.refreshStats()
-  } catch (e) {
-    showToast('❌ 撤销失败')
-  }
+// 撤销：本地回滚在 store 内同步完成，网络反向写入后台执行（失败自动入队）
+function undoAction(action) {
+  gameStore.undoAction(action).catch(e => {
+    console.warn('[undoAction] 后台同步失败（已入队）:', e?.message)
+  })
+  const desc = action ? `↩ 已撤销：${action.player_name || ''} ${actionLabel(action.actionType || action.action_type || '')}` : '↩ 已撤销'
+  showToast(desc)
+  // 刷新两个面板的实时数据（读的是本地 store，立即生效）
+  homePanelRef.value?.refreshStats()
+  awayPanelRef.value?.refreshStats()
+  loadTeamFouls()
 }
 
 function actionLabel(type) {
