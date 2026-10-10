@@ -26,6 +26,21 @@ export function fmtClock(secs) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+// 节次标签：常规节显示「第N节」，超出常规节数即为加时，显示「加时N」
+export function quarterLabel(quarter, quarters = 4) {
+  const q = Math.max(1, Number(quarter) || 1)
+  const regular = Math.max(1, Number(quarters) || 4)
+  return q > regular ? `加时${q - regular}` : `第${q}节`
+}
+
+// 当前节次的满节时长（秒）：常规节用 quarter_seconds，加时用 overtime_seconds
+export function periodSeconds(game) {
+  if (!game) return 600
+  const regular = Math.max(1, Number(game.quarters) || 4)
+  const q = Number(game.current_quarter) || 1
+  return q > regular ? (game.overtime_seconds ?? 300) : (game.quarter_seconds ?? 600)
+}
+
 // 格式化日期
 export function fmtDate(dateStr) {
   if (!dateStr) return '-'

@@ -6,3 +6,5 @@ dist/
 WORK_RECORD.md
 nul
 site.zip
+.workbuddy/
+supabase/*.csv

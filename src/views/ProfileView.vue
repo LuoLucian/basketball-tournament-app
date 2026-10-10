@@ -103,13 +103,24 @@ onMounted(() => {
 })
 
 async function saveProfile() {
+  if (!form.displayName.trim()) {
+    saveMsg.value = '❌ 显示名称不能为空'
+    return
+  }
   saving.value = true
+  saveMsg.value = ''
   try {
-    await auth.updateProfile({ display_name: form.displayName, phone: form.phone })
+    const result = await auth.updateProfile({ display_name: form.displayName.trim(), phone: form.phone || null })
     saveMsg.value = '✅ 保存成功'
     setTimeout(() => { saveMsg.value = '' }, 2000)
   } catch (e) {
-    saveMsg.value = '❌ 保存失败：' + e.message
+    console.error('[saveProfile]', e)
+    const msg = e?.message || ''
+    if (msg.includes('RLS') || msg.includes('policy') || msg.includes('permission') || msg.includes('row-level')) {
+      saveMsg.value = '❌ 权限不足，无法修改资料'
+    } else {
+      saveMsg.value = '❌ 保存失败：' + (msg || '未知错误')
+    }
   } finally {
     saving.value = false
   }

@@ -9,6 +9,33 @@
       <h1 class="text-xl font-bold text-white">创建赛事</h1>
     </div>
 
+    <!-- 赛事类型选择 -->
+    <div class="grid grid-cols-2 gap-3 mb-5">
+      <div class="px-4 py-3 rounded-xl border border-primary-500 bg-primary-600/10">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          <span class="font-semibold text-white text-sm">单场赛事</span>
+          <span class="ml-auto text-xs text-primary-400 font-semibold">当前</span>
+        </div>
+        <p class="text-xs text-dark-500 mt-1">两支队伍一场对决</p>
+      </div>
+      <button type="button" @click="router.push('/tournaments/create')"
+        class="px-4 py-3 rounded-xl border border-dark-700 bg-dark-800 text-left hover:border-accent-500/50 hover:bg-dark-750 transition-all group">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-accent-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 21h8m-4-4v4M7 4h10v4a5 5 0 01-10 0V4z"/>
+          </svg>
+          <span class="font-semibold text-white text-sm group-hover:text-accent-400 transition-colors">创建锦标赛</span>
+          <svg class="w-3.5 h-3.5 text-dark-500 ml-auto group-hover:text-accent-400 group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </div>
+        <p class="text-xs text-dark-500 mt-1">多队分组/循环赛 + 淘汰赛，决出冠亚季军</p>
+      </button>
+    </div>
+
     <!-- 步骤进度条 -->
     <div class="flex items-center gap-2 mb-6">
       <div v-for="(step, idx) in steps" :key="idx"
@@ -141,26 +168,6 @@
         </div>
       </div>
 
-      <!-- 指派记录员 -->
-      <div class="card card-body animate-fade-in" style="animation-delay: 240ms">
-        <h2 class="font-semibold text-white flex items-center gap-2 mb-4">
-          <span class="w-6 h-6 bg-primary-600 text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
-          指派记录员（可选）
-        </h2>
-        <div class="space-y-2 max-h-40 overflow-y-auto">
-          <label v-for="u in recorders" :key="u.id"
-            class="flex items-center gap-3 p-2 rounded-xl hover:bg-dark-800 cursor-pointer transition-colors"
-          >
-            <input type="checkbox" :value="u.id" v-model="form.recorderIds"
-              class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-primary-600 focus:ring-primary-500 focus:ring-offset-dark-900" />
-            <div>
-              <p class="text-sm font-medium text-white">{{ u.display_name || u.username }}</p>
-              <p class="text-xs text-dark-500">{{ ROLE_LABELS[u.role] }}</p>
-            </div>
-          </label>
-        </div>
-      </div>
-
       <!-- 错误提示 -->
       <div v-if="error" class="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-xl text-sm text-danger-light">
         <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
@@ -183,21 +190,19 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { supabase } from '@/utils/supabase'
-import { ROLE_LABELS } from '@/utils/helpers'
 
 const auth = useAuthStore()
 const router = useRouter()
 
 const teams = ref([])
-const recorders = ref([])
 const loading = ref(false)
 const error = ref('')
 
-const steps = ['基本信息', '对阵', '赛制', '记录员']
+const steps = ['基本信息', '对阵', '赛制']
 const currentStep = computed(() => {
-  if (form.recorderIds.length > 0) return 3
-  if (form.homeTeamId || form.awayTeamId) return 2
-  return 1
+  if (form.homeTeamId && form.awayTeamId) return 2
+  if (form.title) return 1
+  return 0
 })
 
 const form = reactive({
@@ -210,8 +215,7 @@ const form = reactive({
   awayTeamId: '',
   date: '',
   time: '',
-  venue: '',
-  recorderIds: []
+  venue: '德泰科技园篮球场'
 })
 
 const gameTypes = [
@@ -220,13 +224,8 @@ const gameTypes = [
 ]
 
 onMounted(async () => {
-  const [{ data: teamsData }, { data: usersData }] = await Promise.all([
-    supabase.from('teams').select('id, name').eq('is_active', true).order('name'),
-    supabase.from('profiles').select('id, username, display_name, role')
-      .in('role', ['recorder', 'admin', 'super_admin']).eq('is_active', true)
-  ])
+  const { data: teamsData } = await supabase.from('teams').select('id, name').eq('is_active', true).order('name')
   if (teamsData) teams.value = teamsData
-  if (usersData) recorders.value = usersData
 })
 
 async function handleCreate() {
@@ -252,13 +251,6 @@ async function handleCreate() {
     if (gameError) throw gameError
 
     const gameId = gameResult.game_id
-
-    if (form.recorderIds.length > 0) {
-      await supabase.rpc('assign_recorders', {
-        p_game_id: gameId,
-        p_user_ids: form.recorderIds
-      })
-    }
 
     router.push(`/games/${gameId}`)
   } catch (e) {

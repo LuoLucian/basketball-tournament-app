@@ -14,6 +14,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isSuperAdmin = computed(() => role.value === 'super_admin')
   const isAdmin = computed(() => ['super_admin', 'admin'].includes(role.value))
   const isRecorder = computed(() => role.value === 'recorder')
+  // 投屏权限：总管理员默认拥有，其他用户由总管理员在用户管理中分配
+  const canScreen = computed(() => isSuperAdmin.value || !!profile.value?.can_screen)
 
   // 初始化：从 localStorage 恢复登录状态
   async function init() {
@@ -28,7 +30,7 @@ export const useAuthStore = defineStore('auth', () => {
           // 从数据库获取最新 profile（加 8 秒超时保护）
           const profilePromise = supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, role, phone, jersey_no, is_active, created_at, updated_at')
+            .select('id, username, display_name, avatar_url, role, phone, jersey_no, is_active, can_screen, created_at, updated_at')
             .eq('id', parsed.id)
             .single()
           const { data } = await Promise.race([
@@ -77,7 +79,8 @@ export const useAuthStore = defineStore('auth', () => {
       username: data.username,
       display_name: data.display_name,
       role: data.role,
-      avatar_url: data.avatar_url
+      avatar_url: data.avatar_url,
+      can_screen: !!data.can_screen
     }
     user.value = userInfo
     profile.value = { ...userInfo }
@@ -127,26 +130,39 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
+  // 用户注册
+  async function signUp({ username, password, displayName }) {
+    const { data, error } = await supabase.rpc('register_user', {
+      p_username: username,
+      p_password: password,
+      p_display_name: displayName || username
+    })
+    if (error) throw error
+    return data
+  }
+
   // 登出
   function signOut() {
     clearAuth()
   }
 
-  // 更新个人资料
+  // 更新个人资料（通过 RPC 绕过 RLS）
   async function updateProfile(updates) {
-    if (!user.value) return
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.value.id)
-      .select()
-      .single()
-    if (error) throw error
-    profile.value = { ...profile.value, ...data }
-    // 同步更新 user ref
+    if (!user.value) throw new Error('未登录')
+    const { error } = await supabase.rpc('update_my_profile', {
+      p_user_id: user.value.id,
+      p_display_name: updates.display_name || null,
+      p_phone: updates.phone || null
+    })
+    if (error) {
+      console.error('[updateProfile] error:', error)
+      throw error
+    }
+    // 更新本地状态
+    profile.value = { ...profile.value, ...updates }
     user.value = { ...user.value, ...updates }
     saveAuth(user.value)
-    return data
+    return updates
   }
 
   return {
@@ -158,8 +174,10 @@ export const useAuthStore = defineStore('auth', () => {
     isSuperAdmin,
     isAdmin,
     isRecorder,
+    canScreen,
     init,
     signIn,
+    signUp,
     createUser,
     resetUserPassword,
     deleteUser,

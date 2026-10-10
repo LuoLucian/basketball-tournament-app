@@ -46,14 +46,14 @@
             </div>
           </div>
         </div>
-        <!-- 管理员操作按钮（独立行，横向排布） -->
-        <div v-if="auth.isAdmin" class="relative z-10 flex gap-2 mt-4 pt-3 border-t border-primary-600/10">
+        <!-- 操作按钮（独立行，横向排布） -->
+        <div v-if="auth.isAdmin || player.created_by === auth.user?.id" class="relative z-10 flex gap-2 mt-4 pt-3 border-t border-primary-600/10">
           <button @click="goEdit"
             class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
                    bg-dark-800 border-dark-700 text-dark-400 hover:text-primary-400 hover:border-primary-500/30">
             编辑
           </button>
-          <button @click="showDeleteConfirm = true"
+          <button v-if="auth.isAdmin" @click="showDeleteConfirm = true"
             class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200
                    bg-dark-800 border-dark-700 text-dark-400 hover:text-danger hover:border-danger/30">
             删除
@@ -293,14 +293,26 @@ const allStats = ref([])
 const loading = ref(true)
 const activeGameType = ref('entertainment')
 
-// 返回逻辑：从球队页过来返回球队，否则返回球员名册
-const backLabel = computed(() => route.query.from === 'teams' ? '返回球队' : '返回球员名册')
+// 返回逻辑：根据来源返回不同页面
+const backLabel = computed(() => {
+  if (route.query.from === 'teams') return '返回球队'
+  if (route.query.from === 'leaderboard') return '返回排行榜'
+  return '返回球员名册'
+})
 const fromTeamId = computed(() => route.query.teamId || '')
 
 function goBack() {
   if (route.query.from === 'teams') {
-    // 带回 teamId 参数，让球队页自动展开
-    router.push({ path: '/teams', query: fromTeamId.value ? { expand: fromTeamId.value } : {} })
+    // 返回球队详情页
+    router.push({ path: `/teams/${fromTeamId.value}` })
+  } else if (route.query.from === 'leaderboard') {
+    // 返回排行榜（带 query 参数保持状态）
+    router.push({ path: '/stats/leaderboard', query: { 
+      gameType: route.query.gameType || 'entertainment',
+      sortMode: route.query.sortMode || 'total',
+      category: route.query.category || 'pts',
+      position: route.query.position || 'ALL'
+    }})
   } else {
     router.push('/players')
   }
@@ -443,12 +455,22 @@ onMounted(async () => {
   const [{ data: pData }, { data: sData }] = await Promise.all([
     supabase.from('players').select('*').eq('id', playerId).single(),
     supabase.from('game_stats')
-      .select(`*, game:game_id(id, title, started_at, game_type)`)
+      .select('*, game_id')
       .eq('player_id', playerId)
       .order('created_at', { ascending: false })
   ])
   if (pData) player.value = pData
-  if (sData) allStats.value = sData
+  if (sData) {
+    // 批量获取比赛信息
+    const gameIds = [...new Set(sData.map(r => r.game_id))]
+    const { data: gamesData } = await supabase
+      .from('games')
+      .select('id, title, started_at, game_type')
+      .in('id', gameIds)
+    const gameMap = {}
+    if (gamesData) for (const g of gamesData) gameMap[g.id] = g
+    allStats.value = sData.map(r => ({ ...r, game: gameMap[r.game_id] }))
+  }
   loading.value = false
 })
 
@@ -480,10 +502,19 @@ async function confirmReset() {
     // 重新加载数据
     const { data: sData } = await supabase
       .from('game_stats')
-      .select(`*, game:game_id(id, title, started_at, game_type)`)
+      .select('*, game_id')
       .eq('player_id', playerId)
       .order('created_at', { ascending: false })
-    if (sData) allStats.value = sData
+    if (sData) {
+      const gameIds = [...new Set(sData.map(r => r.game_id))]
+      const { data: gamesData } = await supabase
+        .from('games')
+        .select('id, title, started_at, game_type')
+        .in('id', gameIds)
+      const gameMap = {}
+      if (gamesData) for (const g of gamesData) gameMap[g.id] = g
+      allStats.value = sData.map(r => ({ ...r, game: gameMap[r.game_id] }))
+    }
   } catch (e) {
     alert('重置失败：' + (e.message || '未知错误'))
   } finally {

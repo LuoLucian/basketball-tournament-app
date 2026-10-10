@@ -39,6 +39,7 @@ const adminLinks = computed(() => {
   ]
   if (auth.isSuperAdmin) {
     links.push({ to: '/admin/users', icon: '👥', label: '用户管理', desc: '管理账号权限和角色', bg: 'rgba(59,130,246,0.15)' })
+    links.push({ to: '/admin/dashboard', icon: '📈', label: '系统监控', desc: '用户统计、并发量、活跃数据', bg: 'rgba(34,197,94,0.15)' })
   }
   return links
 })

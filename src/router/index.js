@@ -8,6 +8,11 @@ const routes = [
     name: 'Login',
     component: () => import('@/views/auth/LoginView.vue')
   },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/auth/RegisterView.vue')
+  },
 
   // ── 主应用（公开浏览，写操作受角色控制）───────────────
   {
@@ -45,6 +50,28 @@ const routes = [
         component: () => import('@/views/game/GameRecordView.vue'),
         meta: { requiresRole: ['super_admin', 'admin', 'recorder'] }
       },
+      // 锦标赛（公开浏览）
+      {
+        path: 'tournaments',
+        name: 'Tournaments',
+        component: () => import('@/views/tournament/TournamentListView.vue')
+      },
+      {
+        path: 'tournaments/create',
+        name: 'TournamentCreate',
+        component: () => import('@/views/tournament/TournamentCreateView.vue'),
+        meta: { requiresRole: ['super_admin', 'admin'] }
+      },
+      {
+        path: 'tournaments/:id',
+        name: 'TournamentDetail',
+        component: () => import('@/views/tournament/TournamentDetailView.vue')
+      },
+      {
+        path: 'regulation',
+        name: 'Regulation',
+        component: () => import('@/views/tournament/RegulationView.vue')
+      },
       // 统计（公开浏览）
       {
         path: 'stats',
@@ -81,9 +108,20 @@ const routes = [
         component: () => import('@/views/admin/TeamsView.vue')
       },
       {
+        path: 'teams/:id',
+        name: 'TeamDetail',
+        component: () => import('@/views/admin/TeamDetailView.vue')
+      },
+      {
         path: 'admin/users',
         name: 'AdminUsers',
         component: () => import('@/views/admin/UsersView.vue'),
+        meta: { requiresRole: ['super_admin'] }
+      },
+      {
+        path: 'admin/dashboard',
+        name: 'AdminDashboard',
+        component: () => import('@/views/admin/AdminDashboard.vue'),
         meta: { requiresRole: ['super_admin'] }
       },
       // 个人中心（需登录）
@@ -94,6 +132,13 @@ const routes = [
         meta: { requiresAuth: true }
       }
     ]
+  },
+
+  // ── 独立大屏页（电视/投影收藏地址，自动匹配进行中的比赛）──
+  {
+    path: '/screen',
+    name: 'Screen',
+    component: () => import('@/views/game/ScreenView.vue')
   },
 
   // 404

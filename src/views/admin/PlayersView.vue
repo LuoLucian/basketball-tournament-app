@@ -2,7 +2,7 @@
   <div class="page-container">
     <div class="flex items-center justify-between mb-5">
       <h1 class="page-title">球员名册</h1>
-      <button v-if="auth.isAdmin" @click="openCreateForm" class="btn-primary btn-sm">
+      <button v-if="auth.isLoggedIn" @click="openCreateForm" class="btn-primary btn-sm">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
         </svg>
@@ -437,7 +437,8 @@ async function createPlayer() {
       p_height: formData.height || null,
       p_weight: formData.weight || null,
       p_skills: formData.skills.length > 0 ? formData.skills.join(',') : null,
-      p_notes: formData.notes.trim() || null
+      p_notes: formData.notes.trim() || null,
+      p_created_by: auth.user?.id  // 传递当前用户ID
     })
     if (error) throw error
 

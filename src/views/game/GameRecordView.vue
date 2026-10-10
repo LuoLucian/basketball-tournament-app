@@ -61,11 +61,32 @@
               <span class="text-dark-600 mx-0.5">·</span>第 <span class="text-white font-bold">{{ virtualQuarter }}</span> 节
             </div>
             <div v-else class="text-sm text-white font-semibold mt-1">
-              Q{{ gameStore.currentGame.current_quarter }}
+              {{ quarterLabel(gameStore.currentGame.current_quarter, gameStore.currentGame.quarters) }}
               <span class="text-xs ml-1 tabular-nums"
                 :class="remainingSecs <= 60 && clockRunning ? 'text-danger-light font-bold animate-pulse' : 'text-dark-400'">
                 {{ fmtClock(remainingSecs) }}
               </span>
+            </div>
+
+            <!-- 下一次球权提示（裁判换节/争球时参考） -->
+            <button v-if="canManageGame" @click="togglePossession"
+              class="mt-2 px-3 py-1 rounded-full border text-[10px] sm:text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+              :class="[
+                gameStore.currentGame.possession_home == null ? 'border-dark-600 border-dashed text-dark-400' : 'border',
+                quarterBreak && gameStore.currentGame.possession_home != null ? 'animate-pulse' : ''
+              ]"
+              :style="possessionStyle" title="点击切换球权方向">
+              <span v-if="gameStore.currentGame.possession_home == null">⚖ 设置球权方向</span>
+              <template v-else>
+                <span class="text-sm leading-none">{{ possessionHome ? '◀' : '▶' }}</span>
+                <span>{{ possessionLabel }}：{{ possessionTeamName }}</span>
+              </template>
+            </button>
+            <div v-else-if="gameStore.currentGame.possession_home != null"
+              class="mt-2 px-3 py-1 rounded-full border text-[10px] sm:text-xs font-bold flex items-center gap-1.5 whitespace-nowrap border"
+              :style="possessionStyle">
+              <span class="text-sm leading-none">{{ possessionHome ? '◀' : '▶' }}</span>
+              <span>下次球权：{{ possessionTeamName }}</span>
             </div>
           </div>
 
@@ -98,11 +119,13 @@
           {{ ending ? '结束中' : '结束' }}
         </button>
 
-        <!-- 暂停/继续（正式制节间休息时显示"开始第X节"） -->
+        <!-- 暂停/继续（正式制节间休息时显示"开始第X节"）——高亮为主控按钮 -->
         <button v-if="gameStore.currentGame.status === 'active'" @click="togglePause"
-          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-          :class="isPaused ? 'bg-yellow-600 text-white' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'">
-          {{ isPaused ? (quarterBreak ? `▶开始第${gameStore.currentGame.current_quarter}节` : '▶继续') : '⏸暂停' }}
+          class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-black transition-all active:scale-95 whitespace-nowrap ring-1"
+          :class="isPaused
+            ? 'bg-green-500 text-white ring-green-300/60 shadow-[0_0_14px_rgba(34,197,94,0.55)]'
+            : 'bg-amber-400 text-black ring-amber-200/70 shadow-[0_0_14px_rgba(251,191,36,0.6)]'">
+          {{ isPaused ? (quarterBreak ? `▶开始${quarterLabel(gameStore.currentGame.current_quarter, gameStore.currentGame.quarters)}` : '▶继续') : '⏸ 暂停' }}
         </button>
 
         <!-- 强制同步 -->
@@ -162,6 +185,8 @@
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
           :team-fouls="teamFouls.home"
+          :timeouts-remaining="homeTimeoutsRemaining"
+          :timeouts-used="homeTimeoutsUsed"
           :readonly="!canRecord"
           :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
@@ -169,6 +194,7 @@
           @record="handleRecord"
           @lineup-change="handleLineupChange"
           @undo="undoAction"
+          @timeout="handleTimeout"
           class="flex-1 min-w-0"
         />
 
@@ -186,6 +212,8 @@
           :game-type="gameStore.currentGame.game_type"
           :game-status="gameStore.currentGame.status"
           :team-fouls="teamFouls.away"
+          :timeouts-remaining="awayTimeoutsRemaining"
+          :timeouts-used="awayTimeoutsUsed"
           :readonly="!canRecord"
           :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
@@ -193,6 +221,7 @@
           @record="handleRecord"
           @lineup-change="handleLineupChange"
           @undo="undoAction"
+          @timeout="handleTimeout"
           class="flex-1 min-w-0"
         />
       </div>
@@ -223,8 +252,10 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
-import { fmtClock } from '@/utils/helpers'
+import { fmtClock, quarterLabel } from '@/utils/helpers'
 import { supabase } from '@/utils/supabase'
+import { useTeamFouls } from '@/composables/useTeamFouls'
+import { timeoutsRemaining, timeoutsUsed, timeoutMax, timeoutKey } from '@/composables/useTimeouts'
 import TeamPanel from '@/components/game/TeamPanel.vue'
 
 const route = useRoute()
@@ -248,63 +279,82 @@ const homePanelRef = ref(null)
 const awayPanelRef = ref(null)
 const syncing = ref(false)
 
-// ── 队伍犯规（本节）──
-const teamFouls = ref({ home: 0, away: 0 })
-const virtualQuarter = ref(1)   // 娱乐赛虚拟节（领先方得分每满 target/4 分切节）
+// ── 队伍犯规（本节）── 组合式函数与详情页共用，含娱乐赛虚拟节逻辑
+const { teamFouls, virtualQuarter, loadTeamFouls } = useTeamFouls(
+  () => gameStore.currentGame,
+  gameId,
+  () => gameStore.pendingActions
+)
 
-async function loadTeamFouls() {
+// ── 暂停次数（FIBA：上半场 2 次 / 下半场 3 次，按半场独立计算）──
+const homeTimeoutsRemaining = computed(() => timeoutsRemaining(gameStore.currentGame, 'home'))
+const homeTimeoutsUsed = computed(() => timeoutsUsed(gameStore.currentGame, 'home'))
+const awayTimeoutsRemaining = computed(() => timeoutsRemaining(gameStore.currentGame, 'away'))
+const awayTimeoutsUsed = computed(() => timeoutsUsed(gameStore.currentGame, 'away'))
+
+// 记录/撤销一次暂停：先乐观更新本地，失败回滚；成功由 realtime 覆盖为服务端值
+// 记录暂停（非撤销）时同步停表——正规比赛中请求暂停即停表
+async function handleTimeout({ teamId, delta }) {
   const g = gameStore.currentGame
-  if (!g) return
-  const { data } = await supabase
-    .from('action_logs')
-    .select('action_type, delta, team_id, quarter')
-    .eq('game_id', gameId)
-    .in('action_type', ['pf', 'pts_1', 'pts_2', 'pts_3'])
-    .order('created_at', { ascending: true })
-  const logs = data || []
-
-  // 离线队列中尚未入库的犯规
-  const pendingPf = { home: 0, away: 0 }
-  for (const a of gameStore.pendingActions) {
-    if (a.p_action_type !== 'pf' || a.p_game_id !== gameId) continue
-    if (a.p_team_id === g.home_team_id) pendingPf.home += a.p_delta || 1
-    else pendingPf.away += a.p_delta || 1
+  if (!g || !teamId || !canManageGame.value) return
+  const side = teamId === g.home_team_id ? 'home' : 'away'
+  const key = timeoutKey(g, side)
+  const max = timeoutMax(g.current_quarter, g.quarters)
+  const prev = Number(g[key]) || 0
+  const next = Math.max(0, Math.min(max, prev + delta))
+  if (next === prev) return
+  gameStore.currentGame = { ...g, [key]: next }
+  try {
+    const { error } = await supabase.rpc('record_timeout', {
+      p_game_id: gameId, p_team_id: teamId, p_delta: delta
+    })
+    if (error) throw error
+  } catch (e) {
+    gameStore.currentGame = { ...gameStore.currentGame, [key]: prev }
+    showToast('❌ 暂停记录失败')
+    return
   }
-
-  if (g.game_type === 'entertainment') {
-    // 娱乐赛：领先方得分每满 target/4 分进入下一虚拟节，犯规随之重置
-    const perQ = Math.max(1, Math.round((g.target_score || 120) / 4))
-    const vqOf = (lead) => Math.min(4, Math.floor(lead / perQ) + 1)
-    let home = 0, away = 0
-    const pfByVq = {}
-    for (const log of logs) {
-      if (log.action_type === 'pf') {
-        const vq = vqOf(Math.max(home, away))
-        if (!pfByVq[vq]) pfByVq[vq] = { home: 0, away: 0 }
-        if (log.team_id === g.home_team_id) pfByVq[vq].home += log.delta || 1
-        else pfByVq[vq].away += log.delta || 1
-      } else {
-        const pts = (log.action_type === 'pts_1' ? 1 : log.action_type === 'pts_2' ? 2 : 3) * (log.delta || 1)
-        if (log.team_id === g.home_team_id) home += pts
-        else away += pts
-      }
-    }
-    const curVq = vqOf(Math.max(g.home_score || 0, g.away_score || 0))
-    virtualQuarter.value = curVq
-    teamFouls.value = {
-      home: (pfByVq[curVq]?.home || 0) + pendingPf.home,
-      away: (pfByVq[curVq]?.away || 0) + pendingPf.away
-    }
+  if (delta > 0 && g.status === 'active' && !g.is_paused) {
+    try { await setPaused(true) } catch (e) { /* 停表失败不影响暂停计数 */ }
+    showToast('⏸ 已记录暂停，比赛已停表')
   } else {
-    // 正式赛：按 action_logs 记录的节次统计
-    const q = g.current_quarter || 1
-    let h = 0, a = 0
-    for (const log of logs) {
-      if (log.action_type !== 'pf' || (log.quarter || 1) !== q) continue
-      if (log.team_id === g.home_team_id) h += log.delta || 1
-      else a += log.delta || 1
-    }
-    teamFouls.value = { home: h + pendingPf.home, away: a + pendingPf.away }
+    showToast(delta > 0 ? '⏸ 已记录暂停' : '↩ 已撤销暂停')
+  }
+}
+
+// ── 下一次球权（裁判换节/争球提示，realtime 自动同步）──
+const possessionHome = computed(() => gameStore.currentGame?.possession_home === true)
+const possessionTeamName = computed(() => {
+  const g = gameStore.currentGame
+  if (!g) return ''
+  const t = possessionHome.value ? g.home_team : g.away_team
+  return t?.short_name || t?.name || (possessionHome.value ? '主队' : '客队')
+})
+const possessionLabel = computed(() =>
+  quarterBreak.value ? `第${gameStore.currentGame?.current_quarter || 1}节球权` : '下次球权'
+)
+const possessionStyle = computed(() => {
+  const g = gameStore.currentGame
+  if (!g || g.possession_home == null) return {}
+  const color = possessionHome.value
+    ? (g.home_team?.color || '#ffffff')
+    : (g.away_team?.color || '#ffffff')
+  return { color, borderColor: color + '99', backgroundColor: color + '1a' }
+})
+
+async function togglePossession() {
+  const g = gameStore.currentGame
+  if (!g || !canManageGame.value) return
+  const cur = g.possession_home
+  const next = cur == null ? true : !cur
+  gameStore.currentGame = { ...g, possession_home: next }
+  try {
+    const { error } = await supabase.rpc('set_possession', { p_game_id: gameId, p_home: next })
+    if (error) throw error
+    showToast(`${next ? '◀' : '▶'} 下次球权：${possessionTeamName.value}`)
+  } catch (e) {
+    gameStore.currentGame = { ...gameStore.currentGame, possession_home: cur }
+    showToast('❌ 球权设置失败')
   }
 }
 
@@ -500,28 +550,32 @@ async function endGame() {
   }
 }
 
-async function togglePause() {
-  const newVal = !isPaused.value
+async function setPaused(newVal) {
   // 必须在翻转 isPaused 之前取值：翻转后 remainingSecs 会切回旧基准值，导致显示闪跳
   const frozenSecs = remainingSecs.value
+  const params = {
+    p_game_id: gameId,
+    p_status: gameStore.currentGame.status,
+    p_is_paused: newVal
+  }
+  // 正式制暂停时固化当前剩余秒数，恢复后从暂停点继续走秒
+  if (newVal && isOfficial.value) params.p_clock_remaining = frozenSecs
+  const { error } = await supabase.rpc('update_game_status', params)
+  if (error) throw error
+  isPaused.value = newVal
+  gameStore.currentGame.is_paused = newVal
+  if (isOfficial.value) {
+    // 暂停：写入冻结秒数；恢复：重置基准时间，避免用暂停期间的旧锚点倒扣
+    if (newVal) gameStore.currentGame.quarter_clock = frozenSecs
+    gameStore.currentGame.clock_updated_at = new Date().toISOString()
+  }
+  if (!newVal) quarterBreak.value = false  // 恢复 = 开始下一节 / 继续比赛
+}
+
+async function togglePause() {
+  const newVal = !isPaused.value
   try {
-    const params = {
-      p_game_id: gameId,
-      p_status: gameStore.currentGame.status,
-      p_is_paused: newVal
-    }
-    // 正式制暂停时固化当前剩余秒数，恢复后从暂停点继续走秒
-    if (newVal && isOfficial.value) params.p_clock_remaining = frozenSecs
-    const { error } = await supabase.rpc('update_game_status', params)
-    if (error) throw error
-    isPaused.value = newVal
-    gameStore.currentGame.is_paused = newVal
-    if (isOfficial.value) {
-      // 暂停：写入冻结秒数；恢复：重置基准时间，避免用暂停期间的旧锚点倒扣
-      if (newVal) gameStore.currentGame.quarter_clock = frozenSecs
-      gameStore.currentGame.clock_updated_at = new Date().toISOString()
-    }
-    if (!newVal) quarterBreak.value = false  // 恢复 = 开始下一节 / 继续比赛
+    await setPaused(newVal)
     showToast(isPaused.value ? '⏸ 比赛已暂停' : '▶ 比赛继续')
   } catch (e) {
     showToast('❌ 操作失败')
@@ -551,16 +605,21 @@ async function endQuarter(auto = false) {
       await supabase.rpc('snapshot_game_players', { p_game_id: gameId })
       await calcMvp()
     } else {
-      // 进入第 data.quarter 节，节间休息（RPC 已置 is_paused=TRUE，realtime 会同步到其他设备）
+      // 进入下一节（常规节或加时），节间休息（RPC 已置 is_paused=TRUE，realtime 会同步到其他设备）
+      const isOt = !!data.overtime
+      const g = gameStore.currentGame
+      const quarters = g?.quarters || 4
       quarterBreak.value = true
       isPaused.value = true
-      if (gameStore.currentGame) {
-        gameStore.currentGame.current_quarter = data.quarter
-        gameStore.currentGame.quarter_clock = gameStore.currentGame.quarter_seconds || 600
-        gameStore.currentGame.is_paused = true
-        gameStore.currentGame.clock_updated_at = new Date().toISOString()
+      if (g) {
+        g.current_quarter = data.quarter
+        g.quarter_clock = isOt ? (g.overtime_seconds ?? 300) : (g.quarter_seconds || 600)
+        g.is_paused = true
+        g.clock_updated_at = new Date().toISOString()
       }
-      showToast(`⏱ 第${fromQ}节结束，休息后开始第${data.quarter}节`)
+      showToast(isOt
+        ? `🔥 常规时间战平，进入${quarterLabel(data.quarter, quarters)}（${Math.round((g?.overtime_seconds ?? 300) / 60)} 分钟）`
+        : `⏱ ${quarterLabel(fromQ, quarters)}结束，休息后开始${quarterLabel(data.quarter, quarters)}`)
     }
   } catch (e) {
     showToast('❌ 切节失败：' + (e.message || '未知错误'))

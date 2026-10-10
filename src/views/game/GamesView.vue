@@ -6,12 +6,20 @@
         <h1 class="page-title">赛事大厅</h1>
         <p class="text-sm text-dark-500 mt-1">共 <span class="text-accent-400 font-semibold">{{ total }}</span> 场赛事</p>
       </div>
-      <router-link v-if="auth.isAdmin" to="/games/create" class="btn-primary">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        创建赛事
-      </router-link>
+      <div class="flex items-center gap-2">
+        <router-link to="/tournaments" class="btn-secondary !py-2 !px-3">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 21h8m-4-4v4M7 4h10v4a5 5 0 01-10 0V4z"/>
+          </svg>
+          锦标赛
+        </router-link>
+        <router-link v-if="auth.isAdmin" to="/games/create" class="btn-primary">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          创建赛事
+        </router-link>
+      </div>
     </div>
 
     <!-- 过滤器 -->

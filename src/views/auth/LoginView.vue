@@ -79,6 +79,9 @@
         </form>
 
         <div class="mt-4 text-center text-sm text-dark-500">
+          没有账号？<router-link to="/register" class="text-primary-400 hover:text-primary-300 font-medium transition-colors">立即注册</router-link>
+        </div>
+        <div class="mt-2 text-center text-sm text-dark-500">
           <router-link to="/" class="text-primary-400 hover:text-primary-300 font-medium transition-colors">← 返回首页</router-link>
         </div>
       </div>

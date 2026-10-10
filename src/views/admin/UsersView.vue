@@ -46,6 +46,16 @@
           >
             <option v-for="(label, val) in ROLE_LABELS" :key="val" :value="val">{{ label }}</option>
           </select>
+          <!-- 投屏权限开关 -->
+          <div class="flex items-center gap-1.5 flex-shrink-0" title="投屏权限：可在比赛详情页开启大屏模式，全屏展示比分与球员数据">
+            <span class="text-[10px] text-dark-500 whitespace-nowrap">投屏</span>
+            <button @click="toggleScreenPerm(u)" role="switch" :aria-checked="!!u.can_screen"
+              class="relative w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0"
+              :class="u.can_screen ? 'bg-primary-600' : 'bg-dark-700'">
+              <span class="absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-transform duration-200"
+                :class="u.can_screen ? 'translate-x-[14px]' : ''"></span>
+            </button>
+          </div>
           <!-- 删除按钮 -->
           <button @click="handleDelete(u)"
             class="text-dark-600 hover:text-danger transition-colors p-1"
@@ -182,6 +192,16 @@ onMounted(loadUsers)
 
 async function updateRole(userId, newRole) {
   await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
+}
+
+async function toggleScreenPerm(u) {
+  const newVal = !u.can_screen
+  u.can_screen = newVal
+  const { error } = await supabase.from('profiles').update({ can_screen: newVal }).eq('id', u.id)
+  if (error) {
+    u.can_screen = !newVal
+    alert('更新投屏权限失败：' + error.message)
+  }
 }
 
 async function handleDelete(u) {

@@ -2,7 +2,7 @@
   <div class="page-container">
     <!-- 返回 + 标题 -->
     <div class="flex items-center gap-3 mb-5">
-      <router-link to="/games" class="text-dark-500 hover:text-white transition-colors p-1 flex-shrink-0">
+      <router-link :to="backTo" class="text-dark-500 hover:text-white transition-colors p-1 flex-shrink-0">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
@@ -13,7 +13,7 @@
       </div>
     </div>
     <!-- 操作按钮（独立行，避免与标题重叠） -->
-    <div v-if="canRecord || auth.isSuperAdmin" class="flex gap-2 mb-5">
+    <div v-if="canRecord || auth.canScreen" class="flex gap-2 mb-5">
       <router-link v-if="canRecord" :to="`/games/${gameId}/record`"
         class="btn-accent btn-sm flex items-center gap-1.5">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -21,6 +21,15 @@
         </svg>
         进入录入
       </router-link>
+      <!-- 大屏模式（投屏权限） -->
+      <button v-if="auth.canScreen && game"
+        @click="screenMode = true"
+        class="btn-primary btn-sm flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        大屏模式
+      </button>
       <button v-if="auth.isSuperAdmin && game && !editMode"
         @click="enterEditMode"
         class="btn-ghost btn-sm text-dark-500 hover:text-warning hover:bg-warning/10 hover:border-warning/20 flex items-center gap-1.5">
@@ -48,7 +57,7 @@
       <div class="text-4xl mb-4">⚠️</div>
       <p class="text-dark-400 mb-2">{{ loadError }}</p>
       <p class="text-dark-600 text-xs mb-6">赛事ID: {{ gameId }}</p>
-      <router-link to="/games" class="btn-primary btn-sm">返回赛事列表</router-link>
+      <router-link :to="backTo" class="btn-primary btn-sm">返回赛事列表</router-link>
     </div>
 
     <template v-else-if="game">
@@ -108,8 +117,9 @@
                 {{ game.home_team?.name || '主队' }}
               </p>
               <!-- 比分 -->
-              <div class="relative inline-block">
-                <p class="text-7xl font-black tabular-nums leading-none"
+              <div class="relative inline-block max-w-full">
+                <p class="font-black tabular-nums leading-none"
+                  :class="scoreClass(game.home_score)"
                   :style="{ color: homeColor, textShadow: `0 0 40px ${homeColor}66, 0 0 80px ${homeColor}22` }">
                   {{ game.home_score }}
                 </p>
@@ -141,6 +151,13 @@
                 {{ Math.abs(game.home_score - game.away_score) }} 分差
               </div>
               <div v-else class="mt-2 text-xs text-warning font-bold">平局</div>
+              <!-- 下次球权提示（realtime 自动同步录入端的设置） -->
+              <div v-if="game.possession_home != null"
+                class="mt-2 px-3 py-1 rounded-full border text-[10px] font-bold flex items-center gap-1.5 whitespace-nowrap"
+                :style="possessionStyle">
+                <span class="text-sm leading-none">{{ game.possession_home ? '◀' : '▶' }}</span>
+                <span>下次球权：{{ possessionTeamName }}</span>
+              </div>
             </div>
 
             <!-- 客队 -->
@@ -149,8 +166,9 @@
                 :style="{ color: awayColor }">
                 {{ game.away_team?.name || '客队' }}
               </p>
-              <div class="relative inline-block">
-                <p class="text-7xl font-black tabular-nums leading-none"
+              <div class="relative inline-block max-w-full">
+                <p class="font-black tabular-nums leading-none"
+                  :class="scoreClass(game.away_score)"
                   :style="{ color: awayColor, textShadow: `0 0 40px ${awayColor}66, 0 0 80px ${awayColor}22` }">
                   {{ game.away_score }}
                 </p>
@@ -253,53 +271,77 @@
       <!-- ════════════════════════════════════════
            球员数据统计表
            ════════════════════════════════════════ -->
-      <div v-show="activeTab === 'stats'" class="card mb-4">
-        <div class="card-header flex items-center justify-between">
-          <h2 class="font-semibold text-white">球员数据</h2>
-          <!-- 队伍切换 / 编辑模式按钮 -->
-          <div v-if="!editMode" class="flex gap-1 bg-dark-800 rounded-lg p-0.5">
-            <button v-for="opt in teamFilterOptions" :key="opt.value"
-              @click="teamFilter = opt.value"
-              class="px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200"
-              :class="teamFilter === opt.value
-                ? 'bg-primary-600/20 text-primary-300 shadow-sm'
-                : 'text-dark-500 hover:text-dark-300'">
-              {{ opt.label }}
-            </button>
+      <Teleport to="body" :disabled="!landscapeStats">
+      <div v-show="activeTab === 'stats'" class="card mb-4"
+        :class="landscapeStats ? (landscapeRotated ? 'landscape-overlay is-rotated' : 'landscape-overlay') : ''"
+        :style="landscapeStats ? { width: landscapeStage.w + 'px', height: landscapeStage.h + 'px' } : undefined">
+        <div class="card-header flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <h2 class="font-semibold text-white whitespace-nowrap">球员数据</h2>
+            <span v-if="landscapeStats && landscapeRotated" class="text-[10px] text-dark-500 whitespace-nowrap">↻ 横握手机查看</span>
           </div>
-          <div v-if="editMode" class="flex gap-2">
-            <button @click="saveEdits" :disabled="saving" class="px-3 py-1 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-500">
-              {{ saving ? '保存中...' : '保存' }}
+          <div class="flex items-center gap-2">
+            <!-- 队伍切换 / 编辑模式按钮 -->
+            <div v-if="!editMode" class="flex gap-1 bg-dark-800 rounded-lg p-0.5">
+              <button v-for="opt in teamFilterOptions" :key="opt.value"
+                @click="teamFilter = opt.value"
+                class="px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200"
+                :class="teamFilter === opt.value
+                  ? 'bg-primary-600/20 text-primary-300 shadow-sm'
+                  : 'text-dark-500 hover:text-dark-300'">
+                {{ opt.label }}
+              </button>
+            </div>
+            <div v-if="editMode" class="flex gap-2">
+              <button @click="saveEdits" :disabled="saving" class="px-3 py-1 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-500">
+                {{ saving ? '保存中...' : '保存' }}
+              </button>
+              <button @click="cancelEdit" class="px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-dark-400 hover:text-white">
+                取消
+              </button>
+            </div>
+            <!-- 手机端横屏全屏 -->
+            <button v-if="!landscapeStats && !editMode" @click="openLandscapeStats"
+              class="md:hidden px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap
+                     bg-primary-600/20 text-primary-300 border border-primary-500/40 active:scale-95">
+              ⛶ 横屏
             </button>
-            <button @click="cancelEdit" class="px-3 py-1 rounded-lg text-xs font-medium bg-dark-800 text-dark-400 hover:text-white">
-              取消
+            <button v-if="landscapeStats" @click="closeLandscapeStats"
+              class="px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap
+                     bg-red-500/20 text-red-300 border border-red-500/40 active:scale-95">
+              ✕ 退出横屏
             </button>
           </div>
         </div>
 
-        <div style="overflow-x: auto; overflow-y: clip;">
+        <div class="stats-table-container">
           <table class="w-full" style="min-width: 620px;">
-            <thead>
+            <thead class="stats-table-header">
               <tr class="border-b border-dark-700/50">
-                <th class="sticky-th text-left px-2 py-2.5 text-xs font-semibold text-dark-500 whitespace-nowrap"
-                    style="min-width: 90px;">球员</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <!-- 评分列移到最左侧并固定（仅比赛结束后显示） -->
+                <th v-if="game?.status === 'finished'" class="px-2 py-2.5 text-center text-xs font-bold uppercase tracking-wider whitespace-nowrap rating-col-header sticky-rating"
+                    style="min-width: 48px; position: sticky; left: 0; z-index: 13; background: #1a1d2e;">评分</th>
+                <th class="sticky-th text-left px-2 py-2.5 text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
+                    :style="{ 'min-width': '90px', 'position': 'sticky', 'left': game?.status === 'finished' ? '48px' : '0', 'z-index': '12', 'background': '#1a1d2e' }">球员</th>
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 44px;">得分</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 44px;">篮板</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 44px;">助攻</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 44px;">抢断</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 44px;">盖帽</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 44px;">犯规</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 60px;">2分%</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 60px;">3分%</th>
-                <th class="px-2 py-2.5 text-center text-xs font-semibold text-dark-500 whitespace-nowrap"
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
+                    style="min-width: 60px;">罚球%</th>
+                <th class="px-2 py-2.5 text-center text-xs font-bold text-dark-200 uppercase tracking-wider whitespace-nowrap"
                     style="min-width: 44px;">失误</th>
               </tr>
             </thead>
@@ -310,7 +352,7 @@
                 <!-- 主队标题行（仅全队模式显示） -->
                 <tr v-if="teamFilter === 'all' && getTeamStats('home').length"
                   class="bg-dark-800/50">
-                  <td colspan="10" class="px-3 py-1.5">
+                  <td colspan="12" class="px-3 py-1.5">
                     <div class="flex items-center gap-2">
                       <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: homeColor }"></div>
                       <span class="text-[11px] font-bold" :style="{ color: homeColor }">{{ game.home_team?.name }}</span>
@@ -320,10 +362,29 @@
                 </tr>
                 <!-- 主队球员行 -->
                 <tr v-for="stat in getTeamStats('home')" :key="stat.player_id"
-                  class="hover:bg-dark-800/40 transition-colors text-xs"
-                  :class="isOnCourt(stat.player_id) ? 'bg-green-500/[0.04]' : ''">
+                  class="hover:bg-dark-800/40 transition-all duration-200 text-xs cursor-pointer"
+                  :class="[
+                    isOnCourt(stat.player_id) ? 'bg-green-500/[0.04]' : '',
+                    selectedPlayerId === stat.player_id ? 'bg-primary-600/30 ring-1 ring-primary-500/50 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : ''
+                  ]"
+                  @click="selectedPlayerId = selectedPlayerId === stat.player_id ? null : stat.player_id">
+                  <!-- 评分（移到最左侧并固定，仅比赛结束后显示） -->
+                  <td v-if="game?.status === 'finished'" class="px-2 py-1.5 text-center sticky-rating-cell">
+                    <template v-if="game?.status === 'finished'">
+                      <div v-if="getPlayerRatingInfo(stat.player_id)" class="rating-badge" :class="getPlayerRatingInfo(stat.player_id).tier.cssClass"
+                        :style="{
+                          '--rating-color': getPlayerRatingInfo(stat.player_id).tier.color,
+                          '--rating-shadow': getPlayerRatingInfo(stat.player_id).tier.shadow,
+                          '--rating-text': getPlayerRatingInfo(stat.player_id).tier.textColor
+                        }">
+                        <span class="rating-grade">{{ getPlayerRatingInfo(stat.player_id).tier.grade }}</span>
+                        <span class="rating-score">{{ getPlayerRatingInfo(stat.player_id).score.toFixed(1) }}</span>
+                      </div>
+                      <span v-else class="text-dark-600 text-[10px]">-</span>
+                    </template>
+                  </td>
                   <!-- 球员信息（固定列） -->
-                  <td class="sticky-player-info px-2 py-1.5">
+                  <td class="sticky-player-info px-2 py-1.5" :style="{ 'position': 'sticky', 'left': game?.status === 'finished' ? '48px' : '0' }">
                     <div class="flex items-center gap-1.5">
                       <span v-if="isMvpRow(stat)" class="text-xs leading-none flex-shrink-0" title="本场MVP">👑</span>
                       <div class="w-6 h-6 rounded-full flex-shrink-0 overflow-hidden border border-dark-700/50">
@@ -395,15 +456,15 @@
                     <span v-else>{{ stat.pf }}</span>
                   </td>
                   <!-- 2分命中率 -->
-                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg2_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
                     <template v-if="editMode">
-                      <input v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="中"
+                      <input v-model.number="editData[stat.player_id].fg2m" type="number" min="0" placeholder="中"
                         class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
                       <span class="text-dark-600">/</span>
-                      <input v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="投"
+                      <input v-model.number="editData[stat.player_id].fg2a" type="number" min="0" placeholder="投"
                         class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
                     </template>
-                    <span v-else>{{ fgPct(stat) }}</span>
+                    <span v-else>{{ fg2Pct(stat) }}</span>
                   </td>
                   <!-- 3分命中率 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg3_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
@@ -415,6 +476,17 @@
                         class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
                     </template>
                     <span v-else>{{ fg3Pct(stat) }}</span>
+                  </td>
+                  <!-- 罚球命中率 -->
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('ft_pct', stat, 'home') ? 'top-value' : 'text-dark-500')">
+                    <template v-if="editMode">
+                      <input v-model.number="editData[stat.player_id].ftm" type="number" min="0" placeholder="中"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                      <span class="text-dark-600">/</span>
+                      <input v-model.number="editData[stat.player_id].fta" type="number" min="0" placeholder="投"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                    </template>
+                    <span v-else>{{ ftPct(stat) }}</span>
                   </td>
                   <!-- 失误 -->
                   <td class="px-2 py-2 text-center text-dark-500">
@@ -430,7 +502,7 @@
                 <!-- 客队标题行（仅全队模式显示） -->
                 <tr v-if="teamFilter === 'all' && getTeamStats('away').length"
                   class="bg-dark-800/50">
-                  <td colspan="10" class="px-3 py-1.5">
+                  <td colspan="12" class="px-3 py-1.5">
                     <div class="flex items-center gap-2">
                       <div class="w-2 h-2 rounded-full" :style="{ backgroundColor: awayColor }"></div>
                       <span class="text-[11px] font-bold" :style="{ color: awayColor }">{{ game.away_team?.name }}</span>
@@ -440,10 +512,29 @@
                 </tr>
                 <!-- 客队球员行 -->
                 <tr v-for="stat in getTeamStats('away')" :key="stat.player_id"
-                  class="hover:bg-dark-800/40 transition-colors text-xs"
-                  :class="isOnCourt(stat.player_id) ? 'bg-green-500/[0.04]' : ''">
+                  class="hover:bg-dark-800/40 transition-all duration-200 text-xs cursor-pointer"
+                  :class="[
+                    isOnCourt(stat.player_id) ? 'bg-green-500/[0.04]' : '',
+                    selectedPlayerId === stat.player_id ? 'bg-primary-600/30 ring-1 ring-primary-500/50 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : ''
+                  ]"
+                  @click="selectedPlayerId = selectedPlayerId === stat.player_id ? null : stat.player_id">
+                  <!-- 评分（移到最左侧并固定，仅比赛结束后显示） -->
+                  <td v-if="game?.status === 'finished'" class="px-2 py-1.5 text-center sticky-rating-cell">
+                    <template v-if="game?.status === 'finished'">
+                      <div v-if="getPlayerRatingInfo(stat.player_id)" class="rating-badge" :class="getPlayerRatingInfo(stat.player_id).tier.cssClass"
+                        :style="{
+                          '--rating-color': getPlayerRatingInfo(stat.player_id).tier.color,
+                          '--rating-shadow': getPlayerRatingInfo(stat.player_id).tier.shadow,
+                          '--rating-text': getPlayerRatingInfo(stat.player_id).tier.textColor
+                        }">
+                        <span class="rating-grade">{{ getPlayerRatingInfo(stat.player_id).tier.grade }}</span>
+                        <span class="rating-score">{{ getPlayerRatingInfo(stat.player_id).score.toFixed(1) }}</span>
+                      </div>
+                      <span v-else class="text-dark-600 text-[10px]">-</span>
+                    </template>
+                  </td>
                   <!-- 球员信息（固定列） -->
-                  <td class="sticky-player-info px-2 py-1.5">
+                  <td class="sticky-player-info px-2 py-1.5" :style="{ 'position': 'sticky', 'left': game?.status === 'finished' ? '48px' : '0' }">
                     <div class="flex items-center gap-1.5">
                       <span v-if="isMvpRow(stat)" class="text-xs leading-none flex-shrink-0" title="本场MVP">👑</span>
                       <div class="w-6 h-6 rounded-full flex-shrink-0 overflow-hidden border border-dark-700/50">
@@ -515,15 +606,15 @@
                     <span v-else>{{ stat.pf }}</span>
                   </td>
                   <!-- 2分命中率 -->
-                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg2_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
                     <template v-if="editMode">
-                      <input v-model.number="editData[stat.player_id].fgm" type="number" min="0" placeholder="中"
+                      <input v-model.number="editData[stat.player_id].fg2m" type="number" min="0" placeholder="中"
                         class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
                       <span class="text-dark-600">/</span>
-                      <input v-model.number="editData[stat.player_id].fga" type="number" min="0" placeholder="投"
+                      <input v-model.number="editData[stat.player_id].fg2a" type="number" min="0" placeholder="投"
                         class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
                     </template>
-                    <span v-else>{{ fgPct(stat) }}</span>
+                    <span v-else>{{ fg2Pct(stat) }}</span>
                   </td>
                   <!-- 3分命中率 -->
                   <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('fg3_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
@@ -536,6 +627,17 @@
                     </template>
                     <span v-else>{{ fg3Pct(stat) }}</span>
                   </td>
+                  <!-- 罚球命中率 -->
+                  <td class="px-2 py-2 text-center" :class="editMode ? '' : (isTopInColForTeam('ft_pct', stat, 'away') ? 'top-value' : 'text-dark-500')">
+                    <template v-if="editMode">
+                      <input v-model.number="editData[stat.player_id].ftm" type="number" min="0" placeholder="中"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                      <span class="text-dark-600">/</span>
+                      <input v-model.number="editData[stat.player_id].fta" type="number" min="0" placeholder="投"
+                        class="w-8 bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-center text-[10px] text-white" />
+                    </template>
+                    <span v-else>{{ ftPct(stat) }}</span>
+                  </td>
                   <!-- 失误 -->
                   <td class="px-2 py-2 text-center text-dark-500">
                     <input v-if="editMode" v-model.number="editData[stat.player_id].tov" type="number" min="0"
@@ -547,13 +649,13 @@
 
               <!-- 空状态 -->
               <tr v-if="teamFilter === 'all' && getTeamStats('home').length === 0 && getTeamStats('away').length === 0">
-                <td colspan="10" class="text-center py-8 text-dark-500 text-xs">暂无数据</td>
+                <td colspan="12" class="text-center py-8 text-dark-500 text-xs">暂无数据</td>
               </tr>
               <tr v-if="teamFilter === 'home' && getTeamStats('home').length === 0">
-                <td colspan="10" class="text-center py-6 text-dark-500 text-xs">暂无主队数据</td>
+                <td colspan="12" class="text-center py-6 text-dark-500 text-xs">暂无主队数据</td>
               </tr>
               <tr v-if="teamFilter === 'away' && getTeamStats('away').length === 0">
-                <td colspan="10" class="text-center py-6 text-dark-500 text-xs">暂无客队数据</td>
+                <td colspan="12" class="text-center py-6 text-dark-500 text-xs">暂无客队数据</td>
               </tr>
             </tbody>
           </table>
@@ -564,8 +666,21 @@
           <span><span class="text-orange-400 font-bold">高亮</span> 队内最高</span>
           <span><span class="text-warning">3+</span> / <span class="text-danger">5+</span> 犯规预警</span>
           <span><span class="text-dark-400">-</span> 无出手记录</span>
+          <span v-if="game?.status === 'finished' && Object.keys(playerRatings).length > 0">
+            <span class="inline-flex items-center gap-1">
+              <span class="rating-badge" style="--rating-color: #FF4500; --rating-shadow: rgba(255,69,0,0.7); --rating-text: #FFF; padding: 0 4px;">
+                <span class="rating-grade">SS</span>
+              </span>
+              ~
+              <span class="rating-badge" style="--rating-color: #696969; --rating-shadow: rgba(105,105,105,0.3); --rating-text: #CCC; padding: 0 4px;">
+                <span class="rating-grade">D</span>
+              </span>
+              综合评分
+            </span>
+          </span>
         </div>
       </div>
+      </Teleport>
 
       <!-- ════════════════════════════════════════
            教练视角面板
@@ -638,7 +753,7 @@
             </div>
 
             <!-- 全场数据 -->
-            <div class="grid grid-cols-7 gap-1 mb-2">
+            <div class="grid grid-cols-6 gap-1 mb-2">
               <div v-for="s in coachStatItems" :key="s.key" class="text-center">
                 <p class="text-[9px] text-dark-600">{{ s.label }}</p>
                 <p class="text-xs font-bold" :class="p[s.key] > 0 ? 'text-white' : 'text-dark-600'">{{ p[s.key] }}</p>
@@ -663,13 +778,16 @@
                   </select>
                   <span v-else class="text-dark-500 w-10 flex-shrink-0">{{ s.stintPosition || p.position }}</span>
                   <span class="text-primary-400 font-medium w-10 flex-shrink-0">{{ s.minutes }}</span>
-                  <div class="flex-1 flex gap-1.5">
+                  <div class="flex-1 flex gap-1.5 flex-wrap">
                     <span class="text-dark-400">{{ s.pts }}分</span>
                     <span class="text-dark-500">{{ s.reb }}板</span>
                     <span class="text-dark-500">{{ s.ast }}助</span>
                     <span v-if="s.stl" class="text-dark-600">{{ s.stl }}断</span>
                     <span v-if="s.blk" class="text-dark-600">{{ s.blk }}帽</span>
                     <span v-if="s.tov" class="text-red-400/60">{{ s.tov }}误</span>
+                    <span class="text-dark-600">{{ stintFg2(s) }}</span>
+                    <span v-if="s.fg3m > 0 || s.fg3a > 0" class="text-dark-600">{{ stintFg3(s) }}</span>
+                    <span v-if="s.ftm > 0 || s.fta > 0" class="text-dark-600">{{ stintFt(s) }}</span>
                   </div>
                   <span class="font-bold flex-shrink-0" :class="getRatingClass(s.rating)">
                     {{ s.rating > 0 ? '+' : '' }}{{ s.rating }}
@@ -753,13 +871,16 @@
                   </select>
                   <span v-else class="text-dark-500 w-10 flex-shrink-0">{{ s.stintPosition || p.position }}</span>
                   <span class="text-primary-400 font-medium w-10 flex-shrink-0">{{ s.minutes }}</span>
-                  <div class="flex-1 flex gap-1.5">
+                  <div class="flex-1 flex gap-1.5 flex-wrap">
                     <span class="text-dark-400">{{ s.pts }}分</span>
                     <span class="text-dark-500">{{ s.reb }}板</span>
                     <span class="text-dark-500">{{ s.ast }}助</span>
                     <span v-if="s.stl" class="text-dark-600">{{ s.stl }}断</span>
                     <span v-if="s.blk" class="text-dark-600">{{ s.blk }}帽</span>
                     <span v-if="s.tov" class="text-red-400/60">{{ s.tov }}误</span>
+                    <span class="text-dark-600">{{ stintFg2(s) }}</span>
+                    <span v-if="s.fg3m > 0 || s.fg3a > 0" class="text-dark-600">{{ stintFg3(s) }}</span>
+                    <span v-if="s.ftm > 0 || s.fta > 0" class="text-dark-600">{{ stintFt(s) }}</span>
                   </div>
                   <span class="font-bold flex-shrink-0" :class="getRatingClass(s.rating)">
                     {{ s.rating > 0 ? '+' : '' }}{{ s.rating }}
@@ -888,6 +1009,15 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 大屏展示模式（仅投屏权限用户可见入口） -->
+    <ScreenDisplay v-if="screenMode && game"
+      :game="game"
+      :stats="stats"
+      :team-fouls="teamFouls"
+      :court-lineup="courtLineup"
+      @close="screenMode = false"
+    />
   </div>
 </template>
 
@@ -897,13 +1027,22 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStore } from '@/stores/game'
 import { supabase } from '@/utils/supabase'
-import { GAME_STATUS_LABELS, getInitials, fmtDateTime } from '@/utils/helpers'
+import { GAME_STATUS_LABELS, getInitials, fmtDateTime, quarterLabel } from '@/utils/helpers'
+import { POSITION_WEIGHTS, POSITION_FOCUS } from '@/utils/efficiency'
+import { useTeamFouls } from '@/composables/useTeamFouls'
+import ScreenDisplay from '@/components/game/ScreenDisplay.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const gameStore = useGameStore()
 const gameId = route.params.id
+
+// 返回目标：优先 from 参数（如从锦标赛进入则回锦标赛），否则赛事列表
+const backTo = computed(() => {
+  const from = route.query.from
+  return typeof from === 'string' && from.startsWith('/') ? from : '/games'
+})
 
 const game = ref(null)
 const gameChannel = ref(null)  // 实时订阅频道
@@ -918,12 +1057,42 @@ const activeTab = ref('stats')
 const loading = ref(true)
 const loadError = ref('')
 
+// 缓存：观众数据查询结果，供教练数据复用
+const cachedTeamPlayers = ref(null)  // team_players 查询结果
+const cachedGameStats = ref(null)    // game_stats 查询结果
+
 const editMode = ref(false)
 const saving = ref(false)
 const editData = ref({})
+const selectedPlayerId = ref(null) // 数据统计表点击高亮的球员ID
+
+// ── 大屏展示模式（投屏权限用户） ──
+const screenMode = ref(false)
+
+// ── 下次球权提示（VS 比分板中央展示） ──
+const possessionTeamName = computed(() => {
+  const g = game.value
+  if (!g || g.possession_home == null) return ''
+  const t = g.possession_home ? g.home_team : g.away_team
+  return t?.short_name || t?.name || (g.possession_home ? '主队' : '客队')
+})
+const possessionStyle = computed(() => {
+  const g = game.value
+  if (!g || g.possession_home == null) return {}
+  const color = g.possession_home ? (g.home_team?.color || '#ffffff') : (g.away_team?.color || '#ffffff')
+  return { color, borderColor: color + '99', backgroundColor: color + '1a' }
+})
+
+// ── 队伍犯规（本节，与录入页共用逻辑，供大屏展示） ──
+const { teamFouls, loadTeamFouls } = useTeamFouls(() => game.value, gameId)
+let foulsDebounce = null
+function debouncedLoadFouls() {
+  clearTimeout(foulsDebounce)
+  foulsDebounce = setTimeout(loadTeamFouls, 600)
+}
 
 // ── 超管编辑功能 ──
-const statEditFields = ['pts', 'reb', 'ast', 'stl', 'blk', 'pf', 'tov', 'fgm', 'fga', 'fg3m', 'fg3a']
+const statEditFields = ['pts', 'reb', 'ast', 'stl', 'blk', 'pf', 'tov', 'fg2m', 'fg2a', 'fg3m', 'fg3a', 'ftm', 'fta']
 
 function enterEditMode() {
   editData.value = {}
@@ -991,8 +1160,40 @@ const teamFilterOptions = [
   { label: '客队', value: 'away' },
 ]
 
+// ── 手机端横屏全屏查看球员数据 ──
+// 竖屏时旋转90°模拟横屏（表格620px宽正好铺满手机高度方向）；物理横屏时直接铺满全屏
+const landscapeStats = ref(false)
+const landscapeRotated = ref(false)
+const landscapeStage = ref({ w: 0, h: 0 })
+
+function updateLandscapeStage() {
+  const rotated = window.innerHeight > window.innerWidth
+  landscapeRotated.value = rotated
+  landscapeStage.value = rotated
+    ? { w: window.innerHeight, h: window.innerWidth }
+    : { w: window.innerWidth, h: window.innerHeight }
+}
+
+function openLandscapeStats() {
+  updateLandscapeStage()
+  landscapeStats.value = true
+  document.body.style.overflow = 'hidden'
+  window.addEventListener('resize', updateLandscapeStage)
+}
+
+function closeLandscapeStats() {
+  landscapeStats.value = false
+  document.body.style.overflow = ''
+  window.removeEventListener('resize', updateLandscapeStage)
+}
+
 function teamColor(side) {
   return side === 'home' ? homeColor.value : awayColor.value
+}
+
+// 比分字号按位数自适应：三位数缩小，避免手机端溢出屏幕
+function scoreClass(score) {
+  return String(score ?? 0).length >= 3 ? 'text-5xl sm:text-6xl' : 'text-7xl'
 }
 
 // 按队伍过滤
@@ -1003,18 +1204,19 @@ function getTeamStats(side) {
 
 // MVP PER 评分算法（与教练面板一致）
 const MVP_POSITION_WEIGHTS = {
-  PG:  { pts: 1.0, reb: 0.6, ast: 1.5, stl: 1.3, blk: 0.4, tov: -1.2, pf: -0.8, fga_miss: -0.7, fta_miss: -0.3 },
-  SG:  { pts: 1.2, reb: 0.7, ast: 1.1, stl: 1.1, blk: 0.5, tov: -1.0, pf: -0.8, fga_miss: -0.8, fta_miss: -0.3 },
-  SF:  { pts: 1.1, reb: 0.9, ast: 1.0, stl: 1.0, blk: 0.7, tov: -1.0, pf: -0.8, fga_miss: -0.8, fta_miss: -0.3 },
-  PF:  { pts: 1.0, reb: 1.3, ast: 0.7, stl: 0.8, blk: 1.0, tov: -0.9, pf: -0.9, fga_miss: -0.7, fta_miss: -0.4 },
-  C:   { pts: 1.0, reb: 1.5, ast: 0.5, stl: 0.6, blk: 1.4, tov: -0.8, pf: -1.0, fga_miss: -0.6, fta_miss: -0.5 },
-  FLEX:{ pts: 1.0, reb: 1.0, ast: 1.0, stl: 1.0, blk: 1.0, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 }
+  PG:  { pts: 0.9, reb: 0.9, ast: 1.8, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  SG:  { pts: 1.2, reb: 1.0, ast: 1.3, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  SF:  { pts: 1.1, reb: 1.2, ast: 1.1, stl: 1.0, blk: 0.9, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  PF:  { pts: 1.0, reb: 1.5, ast: 0.9, stl: 0.9, blk: 1.3, tov: -0.7, pf: -0.6, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  C:   { pts: 1.0, reb: 1.8, ast: 0.7, stl: 0.7, blk: 1.6, tov: -0.6, pf: -0.6, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  FLEX:{ pts: 1.0, reb: 1.2, ast: 1.2, stl: 1.0, blk: 1.0, tov: -0.7, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 }
 }
 
 function calcMvpRating(s, pos) {
   const w = MVP_POSITION_WEIGHTS[pos] || MVP_POSITION_WEIGHTS.FLEX
-  const fgaMiss = (s.fga || 0) - (s.fgm || 0)
-  const ftaMiss = (s.fta || 0) - (s.ftm || 0)
+  const fg2Miss = (s.fg2a || 0) - (s.fg2m || 0)
+  const fg3Miss = (s.fg3a || 0) - (s.fg3m || 0)
+  const ftMiss = (s.fta || 0) - (s.ftm || 0)
   return Math.round((
     (s.pts || 0) * w.pts +
     (s.reb || 0) * w.reb +
@@ -1023,9 +1225,139 @@ function calcMvpRating(s, pos) {
     (s.blk || 0) * w.blk +
     (s.tov || 0) * w.tov +
     (s.pf || 0) * w.pf +
-    fgaMiss * w.fga_miss +
-    ftaMiss * w.fta_miss
+    fg2Miss * w.fg2_miss +
+    fg3Miss * w.fg3_miss +
+    ftMiss * w.ft_miss
   ) * 10) / 10
+}
+
+// ════════════════════════════════════════════════════════════
+// 球员评分系统（0-16分，王者荣耀风格，SS-D等级）
+// ════════════════════════════════════════════════════════════
+
+// 各位置的权重因子（与MVP评分共用位置权重）
+function calcRawPlayerScore(s, pos) {
+  const w = MVP_POSITION_WEIGHTS[pos] || MVP_POSITION_WEIGHTS.FLEX
+  const fg2Miss = (s.fg2a || 0) - (s.fg2m || 0)
+  const fg3Miss = (s.fg3a || 0) - (s.fg3m || 0)
+  const ftMiss = (s.fta || 0) - (s.ftm || 0)
+  return (
+    (s.pts || 0) * w.pts +
+    (s.reb || 0) * w.reb +
+    (s.ast || 0) * w.ast +
+    (s.stl || 0) * w.stl +
+    (s.blk || 0) * w.blk +
+    (s.tov || 0) * w.tov +
+    (s.pf || 0) * w.pf +
+    fg2Miss * w.fg2_miss +
+    fg3Miss * w.fg3_miss +
+    ftMiss * w.ft_miss
+  )
+}
+
+// 命中率加成（仅奖励高效、惩罚极低效，避免与基础投丢惩罚重复）
+function calcShootingBonus(s) {
+  let bonus = 0
+  // 2分命中率加成（至少出手5次以上才计算，只奖励高效）
+  const fg2a = s.fg2a || 0
+  if (fg2a >= 5) {
+    const fg2pct = (s.fg2m || 0) / fg2a
+    if (fg2pct >= 0.65) bonus += 1.5
+    else if (fg2pct >= 0.55) bonus += 0.8
+    else if (fg2pct < 0.25) bonus -= 0.5
+  }
+  // 3分命中率加成（至少出手4次以上，只奖励高效）
+  const fg3a = s.fg3a || 0
+  if (fg3a >= 4) {
+    const fg3pct = (s.fg3m || 0) / fg3a
+    if (fg3pct >= 0.5) bonus += 2
+    else if (fg3pct >= 0.38) bonus += 1
+    else if (fg3pct < 0.2) bonus -= 0.5
+  }
+  // 罚球命中率加成（至少出手4次）
+  const fta = s.fta || 0
+  if (fta >= 4) {
+    const ftpct = (s.ftm || 0) / fta
+    if (ftpct >= 0.9) bonus += 1
+    else if (ftpct >= 0.8) bonus += 0.5
+    else if (ftpct < 0.4) bonus -= 0.5
+  }
+  return bonus
+}
+
+// 球员评分等级定义（6个等级：SS / S / A / B / C / D）
+// 颜色方案：SS金橙、S紫红、A蓝、B绿、C灰蓝、D暗灰
+const RATING_TIERS = [
+  { min: 14,   grade: 'SS', cssClass: 'rating-ss', label: '绝世',   color: '#FF8C00', shadow: 'rgba(255,140,0,0.8)',   textColor: '#FFF' },
+  { min: 11,   grade: 'S',  cssClass: 'rating-s',  label: '卓越',   color: '#E040FB', shadow: 'rgba(224,64,251,0.7)',  textColor: '#FFF' },
+  { min: 8,    grade: 'A',  cssClass: 'rating-a',  label: '优秀',   color: '#448AFF', shadow: 'rgba(68,138,255,0.6)',  textColor: '#FFF' },
+  { min: 5,    grade: 'B',  cssClass: 'rating-b',  label: '良好',   color: '#00E676', shadow: 'rgba(0,230,118,0.5)',   textColor: '#FFF' },
+  { min: 2,    grade: 'C',  cssClass: 'rating-c',  label: '一般',   color: '#78909C', shadow: 'rgba(120,144,156,0.4)', textColor: '#FFF' },
+  { min: 0,    grade: 'D',  cssClass: 'rating-d',  label: '需努力', color: '#546E7A', shadow: 'rgba(84,110,122,0.3)',  textColor: '#B0BEC5' },
+]
+
+function getGradeFromScore(score) {
+  for (const tier of RATING_TIERS) {
+    if (score >= tier.min) return tier
+  }
+  return RATING_TIERS[RATING_TIERS.length - 1]
+}
+
+// 评分算法说明（非线性，越往上越难）：
+// 1. 基础分 = 位置加权得分（正负值）
+// 2. 命中率加成（-2 ~ +6分）
+// 3. 根据比赛类型使用不同的理论满分基准：
+//    - 娱乐制（打到120/150分）：数据膨胀，基准高 → MAX=50
+//      rawScore=10→5.3, 20→8.7, 30→11.5, 40→13.8, 50→16
+//    - 正式制（4节不停表）：数据紧凑，基准低 → MAX=25
+//      rawScore=5→5.5, 10→8.3, 15→10.7, 20→12.8, 25→16
+// 4. 公式：score = 16 * (rawScore / MAX)^0.65
+// 5. 无保底，最低0分，封顶16分
+
+// 娱乐制理论满分（个人可能20-40分，加权后可达50+，调高门槛避免SS太容易）
+const ENTERTAINMENT_MAX_RAW = 60
+// 正式制理论满分（个人一般8-20分，加权后约25，调高门槛让高分更难）
+const OFFICIAL_MAX_RAW = 30
+
+function calcPlayerScore(rawScore, gameType) {
+  // 根据比赛类型选择基准
+  const maxRaw = gameType === 'official' ? OFFICIAL_MAX_RAW : ENTERTAINMENT_MAX_RAW
+  
+  // 非线性映射：指数 < 1，让高分更难获得
+  let ratio = rawScore / maxRaw
+  
+  // 限制范围 0-1
+  ratio = Math.min(1, Math.max(0, ratio))
+  
+  // 指数变换（0.65让高分段更陡峭）
+  let normalized = 16 * Math.pow(ratio, 0.65)
+  
+  // 封顶16分，最低0分（无保底）
+  normalized = Math.min(16, Math.max(0, normalized))
+  
+  // 保留1位小数
+  const finalScore = Math.round(normalized * 10) / 10
+  const tier = getGradeFromScore(finalScore)
+  return { score: finalScore, tier }
+}
+
+// 计算所有球员的评分
+const playerRatings = computed(() => {
+  if (!game.value || game.value.status !== 'finished') return {}
+  const gameType = game.value.game_type || 'entertainment'
+  const result = {}
+  for (const stat of stats.value) {
+    const pos = stat.player?.team_position || stat.player_position || 'FLEX'
+    const baseScore = calcRawPlayerScore(stat, pos)
+    const shootingBonus = calcShootingBonus(stat)
+    const rawScore = baseScore + shootingBonus
+    result[stat.player_id] = calcPlayerScore(rawScore, gameType)
+  }
+  return result
+})
+
+function getPlayerRatingInfo(playerId) {
+  return playerRatings.value[playerId] || null
 }
 
 const mvpWinner = computed(() => {
@@ -1062,32 +1394,60 @@ const mvpStats = computed(() => {
 })
 
 // ── 命中率计算 ──
-function fgPct(stat) {
-  // 2分出手 = fga（两分不中）+ fgm（两分命中），但 fga 字段在录入时只记录不中次数
-  // 实际出手 = fgm + fga_miss（不中次数，存在 fga 字段）
-  const made = (stat.fgm || 0)
-  const attempted = made + (stat.fga || 0)
+// 2分命中率
+function fg2Pct(stat) {
+  const made = (stat.fg2m || 0)
+  const attempted = (stat.fg2a || 0)
   if (attempted === 0) return '-'
-  return (made / attempted * 100).toFixed(0) + '%'
+  return `${made}/${attempted} ${(made / attempted * 100).toFixed(0)}%`
 }
 
+// 3分命中率（独立计算）
 function fg3Pct(stat) {
   const made = (stat.fg3m || 0)
-  const attempted = made + (stat.fg3a || 0)
+  const attempted = (stat.fg3a || 0)
   if (attempted === 0) return '-'
-  return (made / attempted * 100).toFixed(0) + '%'
+  return `${made}/${attempted} ${(made / attempted * 100).toFixed(0)}%`
+}
+
+// 罚球命中率（独立计算）
+function ftPct(stat) {
+  const made = (stat.ftm || 0)
+  const attempted = (stat.fta || 0)
+  if (attempted === 0) return '-'
+  return `${made}/${attempted} ${(made / attempted * 100).toFixed(0)}%`
+}
+
+// stint 命中率显示
+function stintFg2(s) {
+  const made = s.fg2m || 0
+  const attempted = s.fg2a || 0
+  if (attempted === 0) return ''
+  return '2P:' + Math.round(made / attempted * 100) + '%'
+}
+function stintFg3(s) {
+  const made = s.fg3m || 0
+  const attempted = s.fg3a || 0
+  if (attempted === 0) return ''
+  return '3P:' + Math.round(made / attempted * 100) + '%'
+}
+function stintFt(s) {
+  const made = s.ftm || 0
+  const attempted = s.fta || 0
+  if (attempted === 0) return ''
+  return 'FT:' + Math.round(made / attempted * 100) + '%'
 }
 
 // 用于比较的数值（'-' 视为 -1）
-function fgPctVal(stat) {
-  const made = (stat.fgm || 0)
-  const attempted = made + (stat.fga || 0)
+function fg2PctVal(stat) {
+  const made = (stat.fg2m || 0)
+  const attempted = (stat.fg2a || 0)
   if (attempted === 0) return -1
   return made / attempted
 }
 function fg3PctVal(stat) {
   const made = (stat.fg3m || 0)
-  const attempted = made + (stat.fg3a || 0)
+  const attempted = (stat.fg3a || 0)
   if (attempted === 0) return -1
   return made / attempted
 }
@@ -1105,7 +1465,7 @@ function calcTopValues(side) {
     ast:     Math.max(...d.map(s => s.ast || 0)),
     stl:     Math.max(...d.map(s => s.stl || 0)),
     blk:     Math.max(...d.map(s => s.blk || 0)),
-    fg_pct:  Math.max(...d.map(s => fgPctVal(s))),
+    fg2_pct: Math.max(...d.map(s => fg2PctVal(s))),
     fg3_pct: Math.max(...d.map(s => fg3PctVal(s))),
   }
 }
@@ -1119,7 +1479,7 @@ function isTopInColForTeam(col, stat, side) {
     ast:     s => s.ast || 0,
     stl:     s => s.stl || 0,
     blk:     s => s.blk || 0,
-    fg_pct:  s => fgPctVal(s),
+    fg2_pct: s => fg2PctVal(s),
     fg3_pct: s => fg3PctVal(s),
   }
   return (getVal[col]?.(stat) || 0) === tv[col]
@@ -1202,8 +1562,7 @@ const coachStatItems = [
   { key: 'ast', label: '助攻' },
   { key: 'stl', label: '抢断' },
   { key: 'blk', label: '盖帽' },
-  { key: 'tov', label: '失误' },
-  { key: 'pf', label: '犯规' }
+  { key: 'tov', label: '失误' }
 ]
 
 // 按队伍分组的教练球员
@@ -1222,33 +1581,40 @@ async function loadCoachData() {
   const t0 = Date.now()
   coachLoading.value = true
   try {
-    // 第一阶段：4 个独立查询并行执行（原来串行 5 个请求，耗时 2-10 秒）
     const teamIds = [game.value.home_team_id, game.value.away_team_id]
-    const [lineupRes, actionRes, statsRes, tpRes] = await Promise.all([
+    
+    // 辅助函数：合并同一球员在 game_stats 中的所有记录
+    const gsData = cachedGameStats.value || []
+    function sumStat(playerId, field) {
+      let total = 0
+      for (const row of gsData) {
+        if (row.player_id === playerId) total += (row[field] || 0)
+      }
+      return total
+    }
+    
+    // 优化：只查询观众数据没有的数据（game_lineup全部、action_logs、players）
+    // game_stats 和 team_players 复用观众数据的缓存
+    const [lineupRes, actionRes] = await Promise.all([
       supabase.from('game_lineup')
-        .select('id, player_id, team_id, slot_no, quarter, on_at, off_at, paused_ms_at_on')
+        .select('id, player_id, team_id, slot_no, quarter, on_at, off_at, paused_ms_at_on, paused_ms_at_off')
         .eq('game_id', gameId)
         .order('on_at', { ascending: true }),
       supabase.from('action_logs')
         .select('player_id, team_id, action_type, delta, quarter, created_at')
         .eq('game_id', gameId)
-        .eq('is_voided', false),
-      supabase.from('game_stats')
-        .select('player_id, team_id, pts, reb, ast, stl, blk, tov, pf, fgm, fga, fg3m, fg3a, ftm, fta')
-        .eq('game_id', gameId),
-      supabase.from('team_players')
-        .select('player_id, team_id, jersey_no, position')
-        .in('team_id', teamIds)
+        .eq('is_voided', false)
     ])
-    console.log('[loadCoachData] 阶段1(并行4查询)完成, 耗时:', Date.now() - t0, 'ms')
+    console.log('[loadCoachData] 查询完成(2个并行), 耗时:', Date.now() - t0, 'ms')
 
     const allLineup = lineupRes.data
     if (lineupRes.error) throw lineupRes.error
     const actionLogs = actionRes.data
     if (actionRes.error) throw actionRes.error
-    const gameStats = statsRes.data
-    if (statsRes.error) throw statsRes.error
-    const tpData = tpRes.data
+    
+    // 复用缓存的 game_stats 和 team_players
+    const gameStats = cachedGameStats.value || []
+    const tpData = cachedTeamPlayers.value || []
 
     let jerseyMap = {}
     let positionMap = {}
@@ -1257,7 +1623,7 @@ async function loadCoachData() {
       positionMap = Object.fromEntries(tpData.map(t => [t.player_id, t.position]))
     }
 
-    // 第二阶段：依赖前4个查询结果的 players 查询
+    // 查询 players（这个无法避免，但可以和前两个并行）
     const teamPlayerIds = (tpData || []).map(t => t.player_id)
     const playerIds = [...new Set([
       ...teamPlayerIds,
@@ -1291,29 +1657,8 @@ async function loadCoachData() {
       if (!m.quarters[q]) m.quarters[q] = 0
       m.quarters[q] += duration
 
-      // 原始时长计算
-      // 已下场球员：用实际时长
-      // 在场球员：根据 on_at 计算已过去的时间（扣除暂停），之后由定时器累加
-      let rawDuration
-      if (l.off_at) {
-        rawDuration = Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
-      } else {
-        // 在场球员：计算从 on_at 到现在的有效时间
-        const startMs = new Date(l.on_at).getTime()
-        const g = game.value
-        if (g?.is_paused && g?.paused_at) {
-          // 当前暂停中：只计算到暂停时刻
-          const pausedAtMs = new Date(g.paused_at).getTime()
-          rawDuration = Math.max(0, Math.floor((pausedAtMs - startMs) / 1000))
-        } else {
-          // 比赛进行中：计算到当前，扣除暂停时间
-          const elapsed = Math.floor((Date.now() - startMs) / 1000)
-          const pausedMs = g?.total_paused_ms || 0
-          const pausedMsAtOn = l.paused_ms_at_on || 0
-          const pausedSec = Math.max(0, Math.floor((pausedMs - pausedMsAtOn) / 1000))
-          rawDuration = Math.max(0, elapsed - pausedSec)
-        }
-      }
+      // 原始时长：统一公式（比赛时间域内计时，赛前上场从 started_at 起算）
+      const rawDuration = calcStintSec(l)
       stintsMap[l.player_id].push({
         quarter: q,
         on_at: l.on_at,
@@ -1362,7 +1707,7 @@ async function loadCoachData() {
         oppPointsGained: 0,       // 该阶段对方球队总得分
         netEfficiency: 0,         // 净效率（己方 - 对方，每分钟）
         beforeNetRate: 0,         // 上场前净得分速率（每分钟）
-        stats: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, fgm: 0, fga: 0, ftm: 0, fta: 0 }
+        stats: { pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0 }
       }))
     }
 
@@ -1381,15 +1726,16 @@ async function loadCoachData() {
       if (!stint) continue
       switch (a.action_type) {
         case 'pts_1': stint.stats.pts += 1 * d; stint.stats.ftm += 1 * d; stint.stats.fta += 1 * d; break
-        case 'pts_2': stint.stats.pts += 2 * d; stint.stats.fgm += 1 * d; stint.stats.fga += 1 * d; break
-        case 'pts_3': stint.stats.pts += 3 * d; stint.stats.fgm += 1 * d; stint.stats.fga += 1 * d; break
+        case 'pts_2': stint.stats.pts += 2 * d; stint.stats.fg2m += 1 * d; stint.stats.fg2a += 1 * d; break
+        case 'pts_3': stint.stats.pts += 3 * d; stint.stats.fg2m += 1 * d; stint.stats.fg2a += 1 * d; stint.stats.fg3m += 1 * d; stint.stats.fg3a += 1 * d; break
         case 'reb': stint.stats.reb += d; break
         case 'ast': stint.stats.ast += d; break
         case 'stl': stint.stats.stl += d; break
         case 'blk': stint.stats.blk += d; break
         case 'tov': stint.stats.tov += d; break
         case 'pf': stint.stats.pf += d; break
-        case 'fga_miss': stint.stats.fga += d; break
+        case 'fga_miss': stint.stats.fg2a += d; break
+        case 'fg3a_miss': stint.stats.fg3a += d; break
         case 'fta_miss': stint.stats.fta += d; break
       }
     }
@@ -1434,34 +1780,16 @@ async function loadCoachData() {
     // 4. 时间补偿：上场时间越长，维持高效率越难，给予适当补偿
     // 5. 业余友好：基础分底薪 + 降低惩罚力度 + 放宽贡献阈值
 
-    const POSITION_WEIGHTS = {
-      PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -1.2, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 },
-      SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
-      SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
-      PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -1.0, pf: -0.9, fga_miss: -0.6, fta_miss: -0.5 },
-      C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.8, pf: -0.9, fga_miss: -0.5, fta_miss: -0.5 },
-      FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -1.0, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 }
-    }
-
-    // 位置核心指标（用于计算"位置贡献度"）
-    const POSITION_FOCUS = {
-      PG:  { offense: 'ast', defense: 'stl' },
-      SG:  { offense: 'pts', defense: 'stl' },
-      SF:  { offense: 'pts', defense: 'reb' },
-      PF:  { offense: 'reb', defense: 'blk' },
-      C:   { offense: 'reb', defense: 'blk' },
-      FLEX:{ offense: 'pts', defense: 'reb' }
-    }
+    // 位置权重 / 位置核心指标由 @/utils/efficiency 统一提供（与大屏高效榜同源）
 
     function calcRating(s, pos, minutes, teamPointsGained, oppPointsGained, netEfficiency, beforeNetRate) {
       const w = POSITION_WEIGHTS[pos] || POSITION_WEIGHTS.FLEX
-      const fgaMiss = (s.fga || 0) - (s.fgm || 0)
+      const fgaMiss = (s.fg2a || 0) - (s.fg2m || 0)
       const ftaMiss = (s.fta || 0) - (s.ftm || 0)
 
       // 第一步：基础加权分数（个人表现）
-      // 得分直接加总分（不按分值乘系数），其他数据按次数加权
       const rawScore =
-        (s.pts || 0) +
+        (s.pts || 0) * w.pts +
         (s.reb || 0) * w.reb +
         (s.ast || 0) * w.ast +
         (s.stl || 0) * w.stl +
@@ -1527,32 +1855,31 @@ async function loadCoachData() {
           }
         }
 
-        // 防守型位置（PF/C）额外防守奖励
-        if (['PF', 'C'].includes(pos)) {
-          if ((oppPointsGained || 0) === 0 && minutes >= 2) {
-            impactBonus += 1.0
-          }
-          const defActions = (s.blk || 0) + (s.stl || 0)
-          if (defActions >= 1 && netEff >= 0) {
-            impactBonus += 0.8
-          }
+        // 净效率防守奖励（所有位置）
+        if ((oppPointsGained || 0) === 0 && minutes >= 2) {
+          impactBonus += 1.0
+        }
+        const defActions = (s.blk || 0) + (s.stl || 0)
+        if (defActions >= 1 && netEff >= 0) {
+          impactBonus += 0.8
         }
 
-        // 第四步：时间补偿（减弱衰减：用 minutes^0.7 代替 minutes）
+        // 第四步：时间补偿（减弱衰减）
         let timeModifier = 1.0
-        if (minutes <= 2) timeModifier = 1.4
-        else if (minutes <= 5) timeModifier = 1.2
-        else if (minutes >= 15) timeModifier = 0.95
+        if (minutes <= 2) timeModifier = 1.3
+        else if (minutes <= 5) timeModifier = 1.15
+        else if (minutes >= 15) timeModifier = 0.97
 
         // 第五步：去除底薪
 
         const finalScore = (rawScore + contextBonus + impactBonus) * timeModifier
-        // 正分除以 √分钟，负分乘以 √分钟
+        // 正分除以 minutes^0.4（温和衰减），负分乘以 minutes^0.3
         let rating
+        // 时间衰减指数 0.2：0.4 时正常表现的球员评分被压得过低（实测全场无人达 8 分）
         if (finalScore >= 0) {
-          rating = finalScore / Math.sqrt(minutes)
+          rating = finalScore / Math.pow(minutes, 0.2)
         } else {
-          rating = finalScore * Math.sqrt(minutes)
+          rating = finalScore * Math.pow(minutes, 0.2)
         }
         // 注意：无贡献额外惩罚移到定时器中处理（每3分钟检查一次）
         return Math.round(rating * 10) / 10
@@ -1571,14 +1898,19 @@ async function loadCoachData() {
     const result = allPlayerIds.map(pid => {
       const pInfo = playerMap[pid] || {}
       const jInfo = jerseyMap[pid] || {}
-      const gs = (gameStats || []).find(s => s.player_id === pid) || {}
+      // 优先从 game_stats 快照获取名字（防止球员被删除后显示"未知"）
+      const gsFirst = (gameStats || []).find(s => s.player_id === pid) || {}
+      const snapshotName = gsFirst.player_name || null
+      const snapshotAvatar = gsFirst.player_avatar_url || null
+      const snapshotJersey = gsFirst.jersey_no || null
+      const snapshotPosition = gsFirst.player_position || null
       const mins = minutesMap[pid] || { total: 0, quarters: {} }
       const stints = stintStatsMap[pid] || []
 
       // 计算总上场分钟数
       const totalMins = Math.ceil(mins.total / 60)
-      // 优先使用教练手动调整的位置
-      const pos = coachPositionOverrides.value[pid] || positionMap[pid] || 'FLEX'
+      // 优先使用教练手动调整的位置，其次用快照位置，最后用 team_players 位置
+      const pos = coachPositionOverrides.value[pid] || snapshotPosition || positionMap[pid] || 'FLEX'
 
       // 按上场阶段计算评分
       const playerLineupData = (allLineup || []).filter(l => l.player_id === pid)
@@ -1589,14 +1921,16 @@ async function loadCoachData() {
         if (!lineupEntry && stint.lineup_id) {
           console.warn('[loadCoachData] lineup_id 匹配失败! pid:', pid, 'stintIndex:', idx+1, 'lineup_id:', stint.lineup_id, 'playerLineupData IDs:', playerLineupData.map(l => l.id))
         }
-        // 对于在场球员，用与定时器相同的公式计算 rawDuration（确保扣除暂停）
-        let effectiveRawDuration = stint.duration || 0
-        if (!stint.off_at && lineupEntry) {
-          const onAtMs = new Date(lineupEntry.on_at).getTime()
-          const pausedMsAtOn = lineupEntry.paused_ms_at_on || 0
-          const currentPausedMs = getGamePausedMs()
-          const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
-          effectiveRawDuration = Math.max(0, Math.floor((Date.now() - onAtMs - pausedSinceOn) / 1000))
+        // 对于在场球员，用统一公式重算（比赛时间域内，暂停扣除）
+        let effectiveRawDuration = stint.rawDuration || stint.duration || 0
+        const entryForCalc = lineupEntry || {
+          on_at: stint.on_at,
+          off_at: stint.off_at || null,
+          paused_ms_at_on: stint.paused_ms_at_on || 0,
+          paused_ms_at_off: null
+        }
+        if (!stint.off_at || entryForCalc.on_at) {
+          effectiveRawDuration = calcStintSec(entryForCalc)
         }
         return {
           stintIndex: idx + 1,
@@ -1611,25 +1945,30 @@ async function loadCoachData() {
         }
       })
 
+      // 总上场时间 = 分段时间之和（确保一致）
+      const totalSecFromStints = stintsData.reduce((sum, s) => sum + (s.rawDuration || 0), 0)
+      const totalMinsFromStints = Math.ceil(totalSecFromStints / 60) || 0
+
       return {
         player_id: pid,
         team_id: (allLineup || []).find(l => l.player_id === pid)?.team_id
-          || gs.team_id
+          || gsFirst.team_id
           || jerseyMap[pid]?.team_id,
-        name: pInfo.name || '未知',
-        avatar_url: pInfo.avatar_url,
-        jersey_no: jInfo.jersey_no,
+        name: snapshotName || pInfo.name || '未知',
+        avatar_url: snapshotAvatar || pInfo.avatar_url,
+        jersey_no: snapshotJersey || jInfo.jersey_no,
         position: pos,
-        totalMinutes: formatSeconds(mins.total),
+        totalMinutes: formatSeconds(totalSecFromStints),
         _lineupData: playerLineupData,
-        _totalAccumulatedSec: mins.total || 0,  // 初始化已累计总秒数
-        pts: gs.pts || 0,
-        reb: gs.reb || 0,
-        ast: gs.ast || 0,
-        stl: gs.stl || 0,
-        blk: gs.blk || 0,
-        tov: gs.tov || 0,
-        pf: gs.pf || 0,
+        _totalAccumulatedSec: totalSecFromStints,
+        // 统计数据：合并同一球员的所有 game_stats 记录（不同位置可能有多条）
+        pts: sumStat(pid, 'pts'),
+        reb: sumStat(pid, 'reb'),
+        ast: sumStat(pid, 'ast'),
+        stl: sumStat(pid, 'stl'),
+        blk: sumStat(pid, 'blk'),
+        tov: sumStat(pid, 'tov'),
+        pf: sumStat(pid, 'pf'),
         // 全场评分：按各阶段时间加权平均（含暂停扣除）
         rating: calcTimeWeightedRatingFromStints(stintsData),
         stints: stintsData
@@ -1657,20 +1996,19 @@ function changeStintPosition(playerId, stintIndex, newPosition) {
 
   // 用新位置重算该阶段评分（使用业余友好权重）
   const POSITION_WEIGHTS = {
-    PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -0.6, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 },
-    SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
-    SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -0.5, pf: -0.4, fga_miss: -0.5, fta_miss: -0.2 },
-    PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -0.5, pf: -0.5, fga_miss: -0.4, fta_miss: -0.3 },
-    C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.4, pf: -0.5, fga_miss: -0.3, fta_miss: -0.3 },
-    FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -0.5, pf: -0.4, fga_miss: -0.4, fta_miss: -0.2 }
+    PG:  { pts: 0.9, reb: 0.9, ast: 1.8, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fga_miss: -0.5, fta_miss: -0.3 },
+    SG:  { pts: 1.2, reb: 1.0, ast: 1.3, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fga_miss: -0.6, fta_miss: -0.3 },
+    SF:  { pts: 1.1, reb: 1.2, ast: 1.1, stl: 1.0, blk: 0.9, tov: -0.8, pf: -0.5, fga_miss: -0.6, fta_miss: -0.3 },
+    PF:  { pts: 1.0, reb: 1.5, ast: 0.9, stl: 0.9, blk: 1.3, tov: -0.7, pf: -0.6, fga_miss: -0.5, fta_miss: -0.3 },
+    C:   { pts: 1.0, reb: 1.8, ast: 0.7, stl: 0.7, blk: 1.6, tov: -0.6, pf: -0.6, fga_miss: -0.4, fta_miss: -0.3 },
+    FLEX:{ pts: 1.0, reb: 1.2, ast: 1.2, stl: 1.0, blk: 1.0, tov: -0.7, pf: -0.5, fga_miss: -0.5, fta_miss: -0.3 }
   }
   const w = POSITION_WEIGHTS[newPosition] || POSITION_WEIGHTS.FLEX
   const stintMins = Math.ceil(parseInt(stint.minutes) / 60) || 1
-  const fgaMiss = (stint.fga || 0) - (stint.fgm || 0)
+  const fgaMiss = (stint.fg2a || 0) - (stint.fg2m || 0)
   const ftaMiss = (stint.fta || 0) - (stint.ftm || 0)
-  // 得分直接加总分（不按分值乘系数）
-  const raw = (stint.pts||0) + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
-  stint.rating = Math.round((raw / stintMins) * 10) / 10
+  const raw = (stint.pts||0)*w.pts + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
+  stint.rating = Math.round((raw / Math.pow(stintMins, 0.2)) * 10) / 10
 
   // 重算全场评分（按时间加权平均）
   const allStints = player.stints || []
@@ -1710,6 +2048,8 @@ watch(activeTab, (val) => {
     if (game.value?.status === 'active' && !game.value.is_paused) {
       startCoachTimer()
     }
+    // 低频状态同步兜底（realtime 断开时暂停/节次状态自愈）
+    startStateSync()
   } else {
     stopCoachTimer()
   }
@@ -1733,22 +2073,61 @@ function getGamePausedMs() {
   return ms
 }
 
-function getLineupDurationSec(lineupEntry) {
-  if (!lineupEntry) return 0
-  const start = new Date(lineupEntry.on_at).getTime()
-  const end = lineupEntry.off_at ? new Date(lineupEntry.off_at).getTime() : Date.now()
-  // 计算上场期间暂停时间 = 当前总暂停 - 上场时总暂停
-  let paused = 0
-  if (!lineupEntry.off_at) {
-    const currentPausedMs = getGamePausedMs()
-    const pausedMsAtOn = lineupEntry.paused_ms_at_on || 0
-    // 扣除球员上场后的暂停时间
-    paused = Math.max(0, currentPausedMs - pausedMsAtOn)
+// ══════════════════════════════════════════════════════════
+// 统一在场时间计算（教练页唯一计时标准）
+// 原则：只在比赛时间域内计时
+//   窗口 = [max(on_at, started_at), min(off_at|now|paused_at, finished_at)]
+//   再减去窗口内的暂停时间（total_paused_ms 快照差）
+// - 比赛未开始（status 非 active|finished）：一律 0，
+//   赛前上的场（排首发）不计时
+// - 暂停 / 节间休息：窗口右端 clamp 到 paused_at，暂停期不走秒
+// - 比赛结束：窗口右端 clamp 到 finished_at
+// - 下场球员：用 paused_ms_at_off/on 快照差精确扣除
+// ══════════════════════════════════════════════════════════
+function calcStintSec(l) {
+  if (!l || !l.on_at) return 0
+  const g = game.value || {}
+  // 比赛未开始：赛前上的场不计时间
+  if (g.status !== 'active' && g.status !== 'finished') return 0
+
+  let startMs = new Date(l.on_at).getTime()
+  // 赛前上场：起点 clamp 到比赛开始时刻
+  if (g.started_at) startMs = Math.max(startMs, new Date(g.started_at).getTime())
+
+  let endMs
+  if (l.off_at) {
+    endMs = new Date(l.off_at).getTime()
+  } else {
+    endMs = Date.now()
+    // 在场且当前暂停中（暂停/节间休息）：只计到暂停时刻
+    if (g.is_paused && g.paused_at) {
+      endMs = Math.min(endMs, new Date(g.paused_at).getTime())
+    }
   }
-  const elapsed = end - start
-  paused = Math.min(paused, elapsed)
-  const result = Math.max(0, Math.floor((elapsed - paused) / 1000))
-  return result
+  // 比赛已结束：右端 clamp 到结束时刻
+  if (g.finished_at) endMs = Math.min(endMs, new Date(g.finished_at).getTime())
+  if (endMs <= startMs) return 0
+
+  // 窗口内暂停扣除
+  let pausedMs = 0
+  if (l.off_at) {
+    if (l.paused_ms_at_off != null) {
+      pausedMs = Math.max(0, l.paused_ms_at_off - (l.paused_ms_at_on || 0))
+    }
+  } else {
+    pausedMs = Math.max(0, (g.total_paused_ms || 0) - (l.paused_ms_at_on || 0))
+  }
+  const elapsedMs = endMs - startMs
+  return Math.max(0, Math.floor((elapsedMs - Math.min(pausedMs, elapsedMs)) / 1000))
+}
+
+// 已下场 stint 的有效秒数（统一公式）
+function calcOffStintSec(l) {
+  return calcStintSec(l)
+}
+
+function getLineupDurationSec(lineupEntry) {
+  return calcStintSec(lineupEntry)
 }
 
 // 简化版评分函数（供定时器使用，与 changeStintPosition 一致）
@@ -1767,7 +2146,7 @@ function quickRecalcStintRating(stint, pos) {
   const parts = (stint.minutes || '0:00').split(':')
   const stintMins = parseInt(parts[0]) * 60 + parseInt(parts[1] || 0)
   const mins = Math.max(Math.ceil(stintMins / 60), 1)
-  const fgaMiss = (stint.fga || 0) - (stint.fgm || 0)
+  const fgaMiss = (stint.fg2a || 0) - (stint.fg2m || 0)
   const ftaMiss = (stint.fta || 0) - (stint.ftm || 0)
   const raw = (stint.pts||0)*w.pts + (stint.reb||0)*w.reb + (stint.ast||0)*w.ast + (stint.stl||0)*w.stl + (stint.blk||0)*w.blk + (stint.tov||0)*w.tov + (stint.pf||0)*w.pf + fgaMiss*w.fga_miss + ftaMiss*w.fta_miss
   // 去除底薪
@@ -1776,12 +2155,12 @@ function quickRecalcStintRating(stint, pos) {
   else if (mins <= 5) timeModifier = 1.2
   else if (mins >= 15) timeModifier = 0.95
   const finalScore = raw * timeModifier
-  // 正分除以 √分钟，负分乘以 √分钟
+  // 正分除以 minutes^0.2（与 loadCoachData calcRating 一致），负分同指数
   let rating
   if (finalScore >= 0) {
-    rating = finalScore / Math.sqrt(mins)
+    rating = finalScore / Math.pow(mins, 0.2)
   } else {
-    rating = finalScore * Math.sqrt(mins)
+    rating = finalScore * Math.pow(mins, 0.2)
   }
   stint.rating = Math.round(rating * 10) / 10
 }
@@ -1810,6 +2189,8 @@ function subscribeGameUpdates() {
     }, (payload) => {
       if (payload.new && game.value) {
         game.value = { ...game.value, ...payload.new }
+        // 比分/节次变化时刷新全队犯规（娱乐赛虚拟节随比分切换）
+        debouncedLoadFouls()
         // 暂停状态变化时，启停定时器（暂停时间由数据库 total_paused_ms 追踪）
         const newPaused = !!payload.new.is_paused
         if (newPaused) {
@@ -1834,6 +2215,8 @@ function subscribeGameUpdates() {
         }
         // 增量更新数据统计页
         incrementalUpdateStats(payload.new)
+        // 刷新全队犯规（大屏展示用）
+        debouncedLoadFouls()
       }
     })
     // 监听 game_lineup 变化（换人时触发）- 阵容变化需要全量刷新
@@ -1858,7 +2241,7 @@ function subscribeGameUpdates() {
         const t0 = Date.now()
         const { data: newLineup } = await supabase
           .from('game_lineup')
-          .select('id, player_id, team_id, slot_no, quarter, on_at, off_at, paused_ms_at_on')
+          .select('id, player_id, team_id, slot_no, quarter, on_at, off_at, paused_ms_at_on, paused_ms_at_off')
           .eq('game_id', gameId)
           .order('on_at', { ascending: true })
         console.log('[Realtime] 增量 lineup 查询完成, 耗时:', Date.now() - t0, 'ms, 记录数:', newLineup?.length)
@@ -1880,11 +2263,9 @@ function subscribeGameUpdates() {
               // 在 lineup 数据中找到匹配的记录
               const matchedLineup = pLineup.find(l => l.id === (stint._lineupEntry?.id || stint.lineup_id))
               if (matchedLineup && matchedLineup.off_at) {
-                // 球员已下场，更新 stint
+                // 球员已下场，更新 stint（用快照扣除暂停）
                 stint.off_at = matchedLineup.off_at
-                stint.rawDuration = Math.max(0, Math.floor(
-                  (new Date(matchedLineup.off_at).getTime() - new Date(stint.on_at).getTime()) / 1000
-                ))
+                stint.rawDuration = calcOffStintSec(matchedLineup)
                 stint.minutes = formatSeconds(stint.rawDuration)
                 console.log('[Realtime] 下场更新: 球员', player.name, 'stint', stint.stintIndex, 'off_at 设为', stint.off_at)
               }
@@ -1901,34 +2282,28 @@ function subscribeGameUpdates() {
               // 球员已在 coachPlayers 中，检查是否有新的上场阶段
               const player = coachPlayers.value.find(p => p.player_id === al.player_id)
               if (player) {
-                const playerLineupCount = newLineup.filter(l => l.player_id === al.player_id).length
-                const currentStintCount = (player.stints || []).length
-                console.log('[Realtime] 已有球员:', player.name, 'lineup记录数:', playerLineupCount, '当前stint数:', currentStintCount)
+                const playerLineup = newLineup.filter(l => l.player_id === al.player_id)
+                // 按 lineup_id 去重：只添加 stints 中还不存在的新上场记录
+                // （避免事件重复/顺序错乱时索引错位导致的漏加或重复）
+                const existingLineupIds = new Set(
+                  (player.stints || []).map(s => s._lineupEntry?.id || s.lineup_id)
+                )
+                const newStints = playerLineup.filter(l => !existingLineupIds.has(l.id))
+                console.log('[Realtime] 已有球员:', player.name, 'lineup记录数:', playerLineup.length,
+                  '已有stint数:', (player.stints || []).length, '新增:', newStints.length)
                 // 只在有新阶段时才添加（避免覆盖已有统计数据）
-                if (playerLineupCount > currentStintCount) {
-                  const playerLineup = newLineup.filter(l => l.player_id === al.player_id)
+                if (newStints.length > 0) {
                   // 只添加新增的阶段，保留已有的
-                  for (let i = currentStintCount; i < playerLineupCount; i++) {
-                    const l = playerLineup[i]
-                    // 使用与定时器相同的公式计算 duration（扣除暂停）
-                    let duration
-                    if (l.off_at) {
-                      duration = Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
-                    } else {
-                      const onAtMs = new Date(l.on_at).getTime()
-                      const pausedMsAtOn = l.paused_ms_at_on || 0
-                      const currentPausedMs = getGamePausedMs()
-                      const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
-                      duration = Math.max(0, Math.floor((Date.now() - onAtMs - pausedSinceOn) / 1000))
-                    }
+                  for (const l of newStints) {
+                    const duration = calcStintSec(l)
                     player.stints.push({
-                      stintIndex: i + 1,
+                      stintIndex: (player.stints || []).length + 1,
                       quarter: l.quarter || 1,
                       minutes: formatSeconds(duration),
                       on_at: l.on_at,
                       off_at: l.off_at || null,
                       pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
-                      fgm: 0, fga: 0, ftm: 0, fta: 0,
+                      fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0,
                       rating: 0,
                       _lineupEntry: l,
                       rawDuration: duration,
@@ -1942,16 +2317,7 @@ function subscribeGameUpdates() {
             } else {
               // 新球员不在 coachPlayers 中，快速添加一个简版记录
               const playerLineup = newLineup.filter(l => l.player_id === al.player_id)
-              const currentPausedMs = getGamePausedMs()
-              const calcStintDuration = (l) => {
-                if (l.off_at) {
-                  return Math.max(0, Math.floor((new Date(l.off_at).getTime() - new Date(l.on_at).getTime()) / 1000))
-                }
-                const onAtMs = new Date(l.on_at).getTime()
-                const pausedMsAtOn = l.paused_ms_at_on || 0
-                const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
-                return Math.max(0, Math.floor((Date.now() - onAtMs - pausedSinceOn) / 1000))
-              }
+              const calcStintDuration = (l) => calcStintSec(l)
               const totalDuration = playerLineup.reduce((sum, l) => sum + calcStintDuration(l), 0)
 
               const stints = playerLineup.map((l, idx) => {
@@ -1963,7 +2329,7 @@ function subscribeGameUpdates() {
                   on_at: l.on_at,
                   off_at: l.off_at || null,
                   pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
-                  fgm: 0, fga: 0, ftm: 0, fta: 0,
+                  fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0,
                   rating: 0,
                   _lineupEntry: l,
                   rawDuration: dur,
@@ -2006,7 +2372,16 @@ function subscribeGameUpdates() {
         }
       }
     })
-    .subscribe()
+    // 订阅失败/断开时自动重连，避免 games 暂停状态与 game_lineup 变化静默丢失
+    .subscribe((status, err) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[GameDetail] Realtime订阅异常，5秒后重连...', status, err)
+        setTimeout(() => {
+          if (isUnmounted.value) return
+          subscribeGameUpdates()
+        }, 5000)
+      }
+    })
 }
 
 // 增量更新数据统计页（避免全量刷新）
@@ -2017,14 +2392,17 @@ function incrementalUpdateStats(actionLog) {
   const d = actionLog.delta || 1
   switch (actionLog.action_type) {
     case 'pts_1': stat.pts = (stat.pts||0) + 1*d; stat.ftm = (stat.ftm||0) + 1*d; stat.fta = (stat.fta||0) + 1*d; break
-    case 'pts_2': stat.pts = (stat.pts||0) + 2*d; stat.fgm = (stat.fgm||0) + 1*d; stat.fga = (stat.fga||0) + 1*d; break
-    case 'pts_3': stat.pts = (stat.pts||0) + 3*d; stat.fgm = (stat.fgm||0) + 1*d; stat.fga = (stat.fga||0) + 1*d; stat.fg3m = (stat.fg3m||0) + 1*d; stat.fg3a = (stat.fg3a||0) + 1*d; break
+    case 'pts_2': stat.pts = (stat.pts||0) + 2*d; stat.fg2m = (stat.fg2m||0) + 1*d; stat.fg2a = (stat.fg2a||0) + 1*d; break
+    case 'pts_3': stat.pts = (stat.pts||0) + 3*d; stat.fg3m = (stat.fg3m||0) + 1*d; stat.fg3a = (stat.fg3a||0) + 1*d; break
     case 'reb': stat.reb = (stat.reb||0) + d; break
     case 'ast': stat.ast = (stat.ast||0) + d; break
     case 'stl': stat.stl = (stat.stl||0) + d; break
     case 'blk': stat.blk = (stat.blk||0) + d; break
     case 'tov': stat.tov = (stat.tov||0) + d; break
     case 'pf': stat.pf = (stat.pf||0) + d; break
+    case 'fga_miss': stat.fg2a = (stat.fg2a||0) + d; break
+    case 'fg3a_miss': stat.fg3a = (stat.fg3a||0) + d; break
+    case 'fta_miss': stat.fta = (stat.fta||0) + d; break
   }
 }
 
@@ -2068,13 +2446,11 @@ function incrementalUpdatePlayerStats(actionLog) {
       break
     case 'pts_2':
       stint.pts = (stint.pts || 0) + 2 * delta
-      stint.fgm = (stint.fgm || 0) + 1 * delta
-      stint.fga = (stint.fga || 0) + 1 * delta
+      stint.fg2m = (stint.fg2m || 0) + 1 * delta
+      stint.fg2a = (stint.fg2a || 0) + 1 * delta
       break
     case 'pts_3':
       stint.pts = (stint.pts || 0) + 3 * delta
-      stint.fgm = (stint.fgm || 0) + 1 * delta
-      stint.fga = (stint.fga || 0) + 1 * delta
       stint.fg3m = (stint.fg3m || 0) + 1 * delta
       stint.fg3a = (stint.fg3a || 0) + 1 * delta
       break
@@ -2084,6 +2460,9 @@ function incrementalUpdatePlayerStats(actionLog) {
     case 'blk': stint.blk = (stint.blk || 0) + delta; break
     case 'tov': stint.tov = (stint.tov || 0) + delta; break
     case 'pf': stint.pf = (stint.pf || 0) + delta; break
+    case 'fga_miss': stint.fg2a = (stint.fg2a || 0) + delta; break
+    case 'fg3a_miss': stint.fg3a = (stint.fg3a || 0) + delta; break
+    case 'fta_miss': stint.fta = (stint.fta || 0) + delta; break
   }
 
   // 更新全场统计数据
@@ -2132,7 +2511,8 @@ const CHECK_INTERVAL_MS = 2 * 60 * 1000  // 2分钟
 const PENALTY_PER_MINUTE = 0.3
 
 function startCoachTimer() {
-  stopCoachTimer()
+  // 如果定时器已运行，不要重复启动
+  if (coachTimer) return
   coachTimer = setInterval(() => {
     // 比赛结束或暂停时停止计时
     if (game.value?.status !== 'active' || game.value?.is_paused) {
@@ -2148,18 +2528,13 @@ function startCoachTimer() {
       if (activeStints.length === 0) continue  // 备战席球员跳过
 
       hasUpdate = true
-      // 重新计算每个在场阶段的有效时间（基于 on_at，扣除暂停）
-      // 这样保证跨端时间一致，而非依赖累加器初始值
-      const currentPausedMs = getGamePausedMs()
+      // 统一公式重算每个在场阶段（比赛时间域内，跨端一致）
       for (const stint of activeStints) {
         if (!stint._lineupEntry?.on_at && !stint.on_at) {
           console.warn('[Timer] stint 跳过: 无 on_at, 球员:', player.name, 'stintIndex:', stint.stintIndex, '_lineupEntry:', stint._lineupEntry)
           continue
         }
-        const onAtMs = new Date(stint._lineupEntry?.on_at || stint.on_at).getTime()
-        const pausedMsAtOn = stint._lineupEntry?.paused_ms_at_on || 0
-        const pausedSinceOn = Math.max(0, currentPausedMs - pausedMsAtOn)
-        const rawSec = Math.max(0, Math.floor((Date.now() - onAtMs - pausedSinceOn) / 1000))
+        const rawSec = calcStintSec(stint._lineupEntry || stint)
         stint.rawDuration = rawSec
         stint.minutes = formatSeconds(rawSec)
         
@@ -2225,9 +2600,45 @@ function stopCoachTimer() {
   if (coachTimer) { clearInterval(coachTimer); coachTimer = null }
 }
 
+// 低频状态同步（每15秒）：realtime 断开期间不补发事件，
+// 兜底同步暂停/节次/结束状态，避免"节次结束不停表"和"暂停恢复后不启动"
+let stateSyncTimer = null
+function startStateSync() {
+  if (stateSyncTimer) return
+  stateSyncTimer = setInterval(async () => {
+    if (isUnmounted.value || !game.value) return
+    try {
+      const { data: gRow, error: gErr } = await supabase
+        .from('games')
+        .select('status, is_paused, paused_at, total_paused_ms, current_quarter, finished_at, started_at')
+        .eq('id', gameId)
+        .maybeSingle()
+      if (gErr || !gRow) return
+      const prevPaused = !!game.value?.is_paused
+      game.value = { ...game.value, ...gRow }
+      if (gRow.is_paused || gRow.status !== 'active') {
+        stopCoachTimer()
+      } else if (prevPaused && !gRow.is_paused && gRow.status === 'active') {
+        // 从暂停恢复：重启计时（coachTimer 为空时才生效）
+        startCoachTimer()
+      }
+    } catch (e) {
+      console.warn('[StateSync] games 状态同步失败:', e)
+    }
+  }, 15000)
+}
+
 // 组件卸载时清理定时器
+const isUnmounted = ref(false)
 onUnmounted(() => {
+  isUnmounted.value = true
   stopCoachTimer()
+  if (stateSyncTimer) { clearInterval(stateSyncTimer); stateSyncTimer = null }
+  clearTimeout(foulsDebounce)
+  if (landscapeStats.value) {
+    document.body.style.overflow = ''
+    window.removeEventListener('resize', updateLandscapeStage)
+  }
   // 清理实时订阅
   if (gameChannel.value) {
     supabase.removeChannel(gameChannel.value)
@@ -2275,17 +2686,20 @@ onMounted(async () => {
     game.value = gameData
     loading.value = false
 
+    // 全队犯规（大屏展示用）
+    loadTeamFouls()
+
     // 订阅比赛实时更新（暂停状态同步等）
     subscribeGameUpdates()
 
     // 并行获取：两队所有球员 + 本场统计数据 + MVP + 当前场上阵容
     const [tpRes, statsRes, mvpQuery, lineupRes] = await Promise.allSettled([
       supabase.from('team_players')
-        .select(`team_id, player_id, jersey_no, position, player:player_id(id, name)`)
+        .select(`team_id, player_id, jersey_no, position, player:player_id(id, name, avatar_url)`)
         .in('team_id', [gameData.home_team_id, gameData.away_team_id])
         .eq('is_active', true),
       supabase.from('game_stats')
-        .select(`*, player:player_id(id, name)`)
+        .select(`id, game_id, player_id, team_id, game_type, pts, reb, oreb, dreb, ast, stl, blk, tov, pf, fg2m, fg2a, fg3m, fg3a, ftm, fta, min_played, player_name, player_avatar_url, player_position, jersey_no, team_name, team_color`)
         .eq('game_id', gameId),
       supabase.from('game_mvp')
         .select('*, player:player_id(id, name)')
@@ -2310,27 +2724,104 @@ onMounted(async () => {
     }
 
     // 合并：所有报名球员都要显示，有数据就用，没有就填 0
-    const statFields = ['pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'min_played']
+    // 注意：使用新字段 fg2m/fg2a（2分），fg3m/fg3a（3分），ftm/fta（罚球）
+    const statFields = ['pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg2m', 'fg2a', 'fg3m', 'fg3a', 'ftm', 'fta', 'min_played']
+    const statFieldsOld = ['pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'min_played']
     const merged = []
-    if (tpRes.status === 'fulfilled' && tpRes.value.data) {
-      const homeColorVal = gameData.home_team?.color || '#3b82f6'
-      const awayColorVal = gameData.away_team?.color || '#f97316'
-      const homeName = gameData.home_team?.name || '主队'
-      const awayName = gameData.away_team?.name || '客队'
+    const homeColorVal = gameData.home_team?.color || '#3b82f6'
+    const awayColorVal = gameData.away_team?.color || '#f97316'
+    const homeName = gameData.home_team?.name || '主队'
+    const awayName = gameData.away_team?.name || '客队'
 
+    // 已结束的比赛：从 game_stats 获取数据，同时确保所有报名球员都显示
+    if (gameData.status === 'finished' && tpRes.status === 'fulfilled' && tpRes.value.data) {
+      // 先添加所有报名球员（从 team_players）
       for (const tp of tpRes.value.data) {
         const existing = statsMap[tp.player_id]
         if (existing) {
-          // 有统计数据：合并球衣号码和位置，同时把 NULL 字段默认为 0
+          // 有统计数据：合并数据
           const normalized = { ...existing }
           for (const f of statFields) {
             if (normalized[f] == null) normalized[f] = 0
           }
           normalized.player = {
-            ...existing.player,
+            id: tp.player_id,
+            name: existing.player_name || tp.player?.name || '未知',
+            jersey_no: existing.jersey_no || tp.jersey_no || '',
+            team_position: existing.player_position || tp.position || '',
+            avatar_url: existing.player_avatar_url || tp.player?.avatar_url || null
+          }
+          normalized.team_id = normalized.team_id || tp.team_id
+          merged.push(normalized)
+        } else {
+          // 无统计数据：创建全 0 的记录
+          const isHome = tp.team_id === gameData.home_team_id
+          merged.push({
+            game_id:   gameId,
+            player_id: tp.player_id,
+            team_id:   tp.team_id,
+            pts: 0, reb: 0, ast: 0, stl: 0, blk: 0,
+            pf: 0, tov: 0, fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0,
+            ftm: 0, fta: 0,
+            player_position: tp.position || '',
+            player: {
+              id:        tp.player_id,
+              name:      tp.player?.name || '未知',
+              jersey_no: tp.jersey_no,
+              team_position: tp.position || '',
+              avatar_url: tp.player?.avatar_url || null
+            },
+            team: {
+              id:    tp.team_id,
+              name:  isHome ? homeName : awayName,
+              color: isHome ? homeColorVal : awayColorVal
+            }
+          })
+        }
+      }
+      // 再添加可能已经被移出球队但有数据的球员（保留历史数据）
+      if (statsRes.status === 'fulfilled' && statsRes.value.data) {
+        for (const s of statsRes.value.data) {
+          // 跳过已经添加的球员
+          if (merged.find(m => m.player_id === s.player_id)) continue
+          const normalized = { ...s }
+          for (const f of statFields) {
+            if (normalized[f] == null) normalized[f] = 0
+          }
+          normalized.player = {
+            id: s.player_id,
+            name: s.player_name || '未知',
+            jersey_no: s.jersey_no || '',
+            team_position: s.player_position || '',
+            avatar_url: s.player_avatar_url || null
+          }
+          merged.push(normalized)
+        }
+      }
+    } else if (tpRes.status === 'fulfilled' && tpRes.value.data) {
+      // 进行中/未开始的比赛：使用 team_players 获取当前阵容
+      for (const tp of tpRes.value.data) {
+        const existing = statsMap[tp.player_id]
+        if (existing) {
+          // 有统计数据：合并球衣号码和位置，同时把 NULL 字段默认为 0
+          const normalized = { ...existing }
+          // 兼容旧字段 fgm/fga → 映射到新字段 fg2m/fg2a
+          if (normalized.fgm != null && normalized.fg2m == null) {
+            normalized.fg2m = normalized.fgm
+          }
+          if (normalized.fga != null && normalized.fg2a == null) {
+            normalized.fg2a = normalized.fga
+          }
+          for (const f of statFields) {
+            if (normalized[f] == null) normalized[f] = 0
+          }
+          normalized.player = {
+            id: existing.player_id,
+            name: existing.player_name || tp.player?.name || '未知',
             jersey_no: tp.jersey_no,
             // 优先使用球队位置（tp.position），如果没有则保留快照位置（player_position）
-            team_position: tp.position || normalized.player_position || ''
+            team_position: tp.position || normalized.player_position || '',
+            avatar_url: tp.player?.avatar_url || null
           }
           // 确保 team_id 正确（可能来自 game_stats，可能为 null）
           normalized.team_id = normalized.team_id || tp.team_id
@@ -2343,19 +2834,21 @@ onMounted(async () => {
             player_id: tp.player_id,
             team_id:   tp.team_id,
             pts: 0, reb: 0, ast: 0, stl: 0, blk: 0,
-            pf: 0, tov: 0, fgm: 0, fga: 0, fg3m: 0, fg3a: 0,
+            pf: 0, tov: 0, fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0,
+            ftm: 0, fta: 0,
             player_position: tp.position || '',
             player: {
-              id:        tp.player_id,
-              name:      tp.player?.name || '未知',
-              jersey_no: tp.jersey_no,
-              team_position: tp.position || ''
-            },
-            team: {
-              id:    tp.team_id,
-              name:  isHome ? homeName : awayName,
-              color: isHome ? homeColorVal : awayColorVal
-            }
+            id:        tp.player_id,
+            name:      tp.player?.name || '未知',
+            jersey_no: tp.jersey_no,
+            team_position: tp.position || '',
+            avatar_url: tp.player?.avatar_url || null
+          },
+          team: {
+            id:    tp.team_id,
+            name:  isHome ? homeName : awayName,
+            color: isHome ? homeColorVal : awayColorVal
+          }
           })
         }
       }
@@ -2375,6 +2868,10 @@ onMounted(async () => {
     })
 
     stats.value = merged
+
+    // 缓存查询结果，供教练数据复用
+    if (tpRes.status === 'fulfilled') cachedTeamPlayers.value = tpRes.value.data
+    if (statsRes.status === 'fulfilled') cachedGameStats.value = statsRes.value.data
 
     if (mvpQuery.status === 'fulfilled' && mvpQuery.value.data) {
       mvp.value = mvpQuery.value.data
@@ -2523,6 +3020,181 @@ onMounted(async () => {
   50% { transform: translateY(-8px) scale(1.3); opacity: 1; }
 }
 
+/* ── 球员评分徽章 ── */
+.rating-col-header {
+  color: #fbbf24;
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+  position: sticky;
+  right: 0;
+  z-index: 12;
+  background: #1a1d2e;
+}
+
+/* 评分徽章 - 游戏风格 */
+.rating-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-weight: 800;
+  line-height: 1;
+  background: linear-gradient(145deg, var(--rating-color), color-mix(in srgb, var(--rating-color) 60%, #000));
+  color: var(--rating-text);
+  box-shadow: 
+    0 2px 4px rgba(0,0,0,0.4),
+    0 0 10px var(--rating-shadow),
+    inset 0 1px 0 rgba(255,255,255,0.3),
+    inset 0 -1px 0 rgba(0,0,0,0.2);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  cursor: default;
+  white-space: nowrap;
+  min-width: 32px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.rating-badge:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 
+    0 4px 8px rgba(0,0,0,0.5),
+    0 0 20px var(--rating-shadow),
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    inset 0 -1px 0 rgba(0,0,0,0.2);
+}
+
+/* 徽章顶部高光 */
+.rating-badge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.25), transparent);
+  pointer-events: none;
+}
+
+/* 徽章底部暗角 */
+.rating-badge::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(to top, rgba(0,0,0,0.2), transparent);
+  pointer-events: none;
+}
+
+.rating-grade {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-shadow: 
+    0 0 4px rgba(0,0,0,0.5),
+    0 1px 2px rgba(0,0,0,0.3);
+  z-index: 1;
+}
+
+.rating-score {
+  font-size: 8px;
+  font-weight: 700;
+  opacity: 0.95;
+  margin-top: 1px;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+  z-index: 1;
+}
+
+/* SS 等级 - 传说品质（金橙色+脉动光效+旋转光环） */
+.rating-ss {
+  animation: ssPulse 2s ease-in-out infinite;
+  border: 1.5px solid rgba(255,200,100,0.6);
+  background: linear-gradient(145deg, #FF8C00, #FF5722, #E65100) !important;
+}
+.rating-ss::before {
+  background: linear-gradient(to bottom, rgba(255,255,200,0.5), transparent);
+}
+.rating-ss::after {
+  background: linear-gradient(to top, rgba(0,0,0,0.3), transparent);
+}
+@keyframes ssPulse {
+  0%, 100% { 
+    box-shadow: 
+      0 2px 4px rgba(0,0,0,0.4),
+      0 0 12px rgba(255,140,0,0.8),
+      0 0 30px rgba(255,140,0,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  50% { 
+    box-shadow: 
+      0 2px 4px rgba(0,0,0,0.4),
+      0 0 20px rgba(255,140,0,0.9),
+      0 0 50px rgba(255,140,0,0.5),
+      inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+}
+
+/* S 等级 - 史诗品质（紫红色+强光晕） */
+.rating-s {
+  border: 1.5px solid rgba(224,64,251,0.5);
+  background: linear-gradient(145deg, #E040FB, #AB47BC, #7B1FA2) !important;
+  box-shadow: 
+    0 2px 4px rgba(0,0,0,0.4),
+    0 0 12px rgba(224,64,251,0.7),
+    0 0 24px rgba(224,64,251,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.35);
+}
+.rating-s::before {
+  background: linear-gradient(to bottom, rgba(255,200,255,0.4), transparent);
+}
+
+/* A 等级 - 精良品质（蓝色+光晕） */
+.rating-a {
+  border: 1px solid rgba(68,138,255,0.5);
+  background: linear-gradient(145deg, #448AFF, #2962FF, #1565C0) !important;
+  box-shadow: 
+    0 2px 4px rgba(0,0,0,0.4),
+    0 0 10px rgba(68,138,255,0.6),
+    inset 0 1px 0 rgba(255,255,255,0.3);
+}
+.rating-a::before {
+  background: linear-gradient(to bottom, rgba(180,210,255,0.35), transparent);
+}
+
+/* B 等级 - 良好品质（绿色） */
+.rating-b {
+  border: 1px solid rgba(0,230,118,0.4);
+  background: linear-gradient(145deg, #00E676, #00C853, #009624) !important;
+  box-shadow: 
+    0 2px 4px rgba(0,0,0,0.3),
+    0 0 8px rgba(0,230,118,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.rating-b::before {
+  background: linear-gradient(to bottom, rgba(200,255,220,0.3), transparent);
+}
+
+/* C 等级 - 一般品质（灰蓝色） */
+.rating-c {
+  border: 1px solid rgba(120,144,156,0.3);
+  background: linear-gradient(145deg, #78909C, #607D8B, #455A64) !important;
+  box-shadow: 
+    0 2px 4px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.15);
+}
+
+/* D 等级 - 需努力（暗灰色） */
+.rating-d {
+  border: 1px solid rgba(84,110,122,0.2);
+  background: linear-gradient(145deg, #546E7A, #37474F, #263238) !important;
+  opacity: 0.85;
+  box-shadow: 
+    0 2px 4px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
 /* ── 数据表最高值强化样式（无背景色，不影响列宽） ── */
 .top-value {
   font-weight: 800;
@@ -2530,13 +3202,97 @@ onMounted(async () => {
   text-shadow: 0 0 8px rgba(249, 115, 22, 0.5);
 }
 
+/* ── 数据统计表独立滚动容器 ── */
+.stats-table-container {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 480px;
+  /* 创建层叠上下文：sticky 表头的 z-index 只在容器内生效，避免覆盖底部导航栏 */
+  isolation: isolate;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(75, 85, 99, 0.5) transparent;
+}
+.stats-table-container::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.stats-table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.stats-table-container::-webkit-scrollbar-thumb {
+  background-color: rgba(75, 85, 99, 0.5);
+  border-radius: 3px;
+}
+.stats-table-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(75, 85, 99, 0.8);
+}
+
+/* ── 手机端横屏全屏（竖屏时旋转90°模拟横屏） ── */
+.landscape-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  z-index: 90;
+  transform: translate(-50%, -50%);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  transition: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #11141f;
+}
+.landscape-overlay.is-rotated {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+.landscape-overlay .card-header {
+  flex-shrink: 0;
+}
+.landscape-overlay .stats-table-container {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+/* ── 数据统计表固定表头 ── */
+.stats-table-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.stats-table-header th {
+  background: #1a1d2e;
+  border-bottom: 2px solid rgba(148, 163, 184, 0.2);
+}
+/* 评分和球员表头需要更高的 z-index，确保不被单元格覆盖 */
+.stats-table-header .sticky-rating,
+.stats-table-header .sticky-th {
+  z-index: 101;
+}
+
 /* ── 球员信息固定列 ── */
-.sticky-th,
+.sticky-th {
+  position: sticky;
+  left: 48px;
+  z-index: 101;
+  background-color: #1a1d2e;
+}
 .sticky-player-info {
+  position: sticky;
+  left: 48px;
+  z-index: 10;
+  background-color: #1a1d2e;
+  border-right: 1px solid rgba(148, 163, 184, 0.15);
+}
+/* 评分列固定 */
+.sticky-rating-cell {
   position: sticky;
   left: 0;
   z-index: 10;
   background-color: #1a1d2e;
+  border-right: 1px solid rgba(148, 163, 184, 0.15);
 }
 .sticky-player-info::after {
   content: '';

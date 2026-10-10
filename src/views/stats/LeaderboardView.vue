@@ -12,6 +12,17 @@
       </div>
     </div>
 
+    <!-- 位置筛选 -->
+    <div class="flex gap-1.5 overflow-x-auto mb-4 pb-1 scrollbar-none">
+      <button v-for="pos in positionOptions" :key="pos.value"
+        @click="activePosition = pos.value"
+        class="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border"
+        :class="activePosition === pos.value
+          ? 'bg-primary-600/20 text-primary-400 border-primary-500/50'
+          : 'bg-dark-800 text-dark-400 border-dark-700 hover:text-white hover:border-dark-600'"
+      >{{ pos.label }}</button>
+    </div>
+
     <!-- 排序模式切换：累计 / 场均 -->
     <div class="flex gap-1 bg-dark-800 p-1 rounded-xl border border-dark-700/50 mb-4 w-fit">
       <button v-for="m in sortModes" :key="m.value"
@@ -40,6 +51,7 @@
         <h2 class="font-semibold text-white">
           {{ currentCategories.find(c => c.key === activeCategory)?.label }}
           <span class="text-xs font-normal text-dark-500 ml-1">{{ activeSortMode === 'total' ? '累计' : '场均' }}</span>
+          <span v-if="activePosition !== 'ALL'" class="text-xs font-normal text-primary-400 ml-1">{{ activePosition }}</span>
         </h2>
         <span class="text-xs text-dark-500">{{ activeGameType === 'entertainment' ? '娱乐制' : '正式制' }}</span>
       </div>
@@ -63,7 +75,16 @@
           </div>
 
           <!-- 球员 -->
-          <router-link :to="`/players/${player.player_id}`"
+          <router-link :to="{ 
+            path: `/players/${player.player_id}`, 
+            query: { 
+              from: 'leaderboard',
+              gameType: activeGameType.value,
+              sortMode: activeSortMode.value,
+              category: activeCategory.value,
+              position: activePosition.value
+            } 
+          }"
             class="flex items-center gap-2.5 flex-1 min-w-0"
           >
             <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 border-2 overflow-hidden"
@@ -77,7 +98,10 @@
             </div>
             <div class="min-w-0">
               <p class="font-semibold text-white text-sm truncate">{{ player.player_name }}</p>
-              <p class="text-xs text-dark-500">{{ player.games_played }} 场</p>
+              <p class="text-xs text-dark-500">
+                {{ player.games_played }} 场
+                <span v-if="activePosition !== 'ALL'" class="text-primary-400 ml-1">{{ activePosition }}</span>
+              </p>
             </div>
           </router-link>
 
@@ -109,7 +133,7 @@
             <circle cx="32" cy="40" r="8" opacity="0.2"/>
             <text x="32" y="58" text-anchor="middle" fill="currentColor" stroke="none" font-size="10" opacity="0.4">NO DATA</text>
           </svg>
-          <p class="text-dark-500 text-sm">暂无统计数据</p>
+          <p class="text-dark-500 text-sm">暂无{{ activePosition !== 'ALL' ? activePosition + '位置' : '' }}统计数据</p>
         </div>
       </div>
     </div>
@@ -118,18 +142,47 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/utils/supabase'
 import { getInitials, calcMvpScore } from '@/utils/helpers'
 
-const activeGameType = ref('entertainment')
-const activeSortMode = ref('total') // 'total' | 'avg'
-const activeCategory = ref('pts')
+const route = useRoute()
+const router = useRouter()
+
+// 从 URL query 参数恢复状态，或使用默认值
+const activeGameType = ref(route.query.gameType || 'entertainment')
+const activeSortMode = ref(route.query.sortMode || 'total') // 'total' | 'avg'
+const activeCategory = ref(route.query.category || 'pts')
+const activePosition = ref(route.query.position || 'ALL')
 const leaderboard = ref([])
 const loading = ref(true)
+
+// 状态变化时更新 URL
+function updateQueryParams() {
+  router.replace({
+    path: route.path,
+    query: {
+      gameType: activeGameType.value,
+      sortMode: activeSortMode.value,
+      category: activeCategory.value,
+      position: activePosition.value
+    }
+  })
+}
 
 const gameTypeOptions = [
   { value: 'entertainment', label: '娱乐' },
   { value: 'official', label: '正式' }
+]
+
+const positionOptions = [
+  { value: 'ALL', label: '全部' },
+  { value: 'PG', label: '控卫 PG' },
+  { value: 'SG', label: '分卫 SG' },
+  { value: 'SF', label: '小前 SF' },
+  { value: 'PF', label: '大前 PF' },
+  { value: 'C', label: '中锋 C' },
+  { value: 'FLEX', label: '全能 FLEX' }
 ]
 
 const sortModes = [
@@ -137,13 +190,14 @@ const sortModes = [
   { value: 'avg', label: '场均' }
 ]
 
-// 累计模式只有5个维度
+// 累计模式有6个维度
 const totalCategories = [
   { key: 'pts', label: '得分' },
   { key: 'reb', label: '篮板' },
   { key: 'ast', label: '助攻' },
   { key: 'stl', label: '抢断' },
-  { key: 'blk', label: '盖帽' }
+  { key: 'blk', label: '盖帽' },
+  { key: 'pf', label: '犯规' }
 ]
 
 // 场均模式有全部维度
@@ -153,6 +207,7 @@ const avgCategories = [
   { key: 'ast',  label: '助攻' },
   { key: 'stl',  label: '抢断' },
   { key: 'blk',  label: '盖帽' },
+  { key: 'pf',   label: '犯规' },
   { key: 'fg_pct', label: '二分%' },
   { key: 'fg3_pct', label: '三分%' },
   { key: 'mvp_score', label: 'MVP分' }
@@ -205,77 +260,159 @@ function pctFmt(val) {
   return Number(val).toFixed(1) + '%'
 }
 
+// 该赛制暂无比赛数据时：展示全部现役球员，数据全部为 0
+async function loadEmptyLeaderboard() {
+  let playersData = null
+  try {
+    const res = await supabase
+      .from('players')
+      .select('id, name, avatar_url, position')
+      .eq('is_active', true)
+      .order('name')
+    playersData = res.data
+  } catch (e) { /* 忽略，退回空状态 */ }
+  const pool = playersData || []
+  const filtered = activePosition.value === 'ALL'
+    ? pool
+    : pool.filter(p => p.position === activePosition.value)
+  leaderboard.value = filtered.map(p => ({
+    player_id: p.id,
+    player_name: p.name || '-',
+    avatar_url: p.avatar_url || null,
+    player_position: activePosition.value === 'ALL' ? 'ALL' : p.position,
+    games_played: 0,
+    pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
+    fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0,
+    fg_pct: null, fg3_pct: null, mvp_score: 0
+  }))
+  loading.value = false
+}
+
 async function loadLeaderboard() {
   loading.value = true
+  // 始终加载所有数据，在前端分组
   const { data } = await supabase
     .from('game_stats')
-    .select(`
-      player_id,
-      team_id,
-      player:player_id(name, avatar_url),
-      game:game_id(id, home_score, away_score, home_team_id, away_team_id),
-      pts, reb, ast, stl, blk, tov, pf,
-      fgm, fga, fg3m, fg3a
-    `)
+    .select('player_id, team_id, game_id, player_name, player_avatar_url, player_position, pts, reb, ast, stl, blk, tov, pf, fg2m, fg2a, fg3m, fg3a')
     .eq('game_type', activeGameType.value)
 
-  if (!data) { loading.value = false; return }
+  if (!data || data.length === 0) { await loadEmptyLeaderboard(); return }
 
-  const map = {}
-  for (const row of data) {
-    const pid = row.player_id
-    if (!map[pid]) {
-      map[pid] = {
-        player_id: pid,
-        player_name: row.player?.name || '-',
-        avatar_url: row.player?.avatar_url || null,
-        games_played: 0,
-        pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
-        fgm: 0, fga: 0, fg3m: 0, fg3a: 0
+  // 批量获取比赛信息（用于MVP计算）
+  const gameIds = [...new Set(data.map(r => r.game_id))]
+  const { data: gamesData } = await supabase
+    .from('games')
+    .select('id, home_score, away_score, home_team_id, away_team_id')
+    .in('id', gameIds)
+  const gameMap = {}
+  if (gamesData) for (const g of gamesData) gameMap[g.id] = g
+
+  // 批量获取球员头像（从 players 表，确保比赛一创建就有头像）
+  const playerIds = [...new Set(data.map(r => r.player_id))]
+  const { data: playersData } = await supabase
+    .from('players')
+    .select('id, avatar_url')
+    .in('id', playerIds)
+  const playerAvatarMap = {}
+  if (playersData) for (const p of playersData) playerAvatarMap[p.id] = p.avatar_url
+
+  if (activePosition.value === 'ALL') {
+    // "全部"模式：按 player_id 合并所有位置的数据
+    const map = {}
+    for (const row of data) {
+      const pid = row.player_id
+      if (!map[pid]) {
+        map[pid] = {
+          player_id: pid,
+          player_name: row.player_name || '-',
+          avatar_url: playerAvatarMap[pid] || row.player_avatar_url || null,
+          player_position: 'ALL',
+          games_played: 0,
+          pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
+          fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0
+        }
+      }
+      const p = map[pid]
+      p.games_played++
+      for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg2m', 'fg2a', 'fg3m', 'fg3a']) {
+        p[k] += (row[k] || 0)
       }
     }
-    const p = map[pid]
-    p.games_played++
-    for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fgm', 'fga', 'fg3m', 'fg3a']) {
-      p[k] += (row[k] || 0)
-    }
-  }
-
-    // 计算 MVP 分：只累加赢球场次
     leaderboard.value = Object.values(map).map(p => {
-      // 计算命中率（至少 5 次出手才纳入排名，出手数 = 命中 + 不中）
-      const totalFG = p.fgm + p.fga
-      const fgPct = totalFG >= 5 ? (p.fgm / totalFG * 100) : null
+      const totalFG = p.fg2m + p.fg3m
+      const totalFGA = p.fg2a + p.fg3a
+      const fgPct = totalFGA >= 5 ? (totalFG / totalFGA * 100) : null
       const total3 = p.fg3m + p.fg3a
       const fg3Pct = total3 >= 5 ? (p.fg3m / total3 * 100) : null
-    // 重新遍历计算 MVP 分（只算赢球场次）
-    let mvpTotal = 0
-    for (const row of data) {
-      if (row.player_id !== p.player_id) continue
-      const g = row.game
-      if (!g) continue
-      // 判断该球员所在队伍是否赢了
-      const isHome = row.team_id === g.home_team_id
-      const isWin = (isHome && g.home_score > g.away_score)
-        || (!isHome && g.away_score > g.home_score)
-      if (!isWin) continue
-      // 赢球场次才计入 MVP 分
-      const stat = {
-        pts: row.pts || 0,
-        reb: row.reb || 0,
-        ast: row.ast || 0,
-        stl: row.stl || 0,
-        blk: row.blk || 0,
-        tov: row.tov || 0,
-        pf: row.pf || 0,
+      let mvpTotal = 0
+      for (const row of data) {
+        if (row.player_id !== p.player_id) continue
+        const g = gameMap[row.game_id]
+        if (!g) continue
+        const isHome = row.team_id === g.home_team_id
+        const isWin = (isHome && g.home_score > g.away_score) || (!isHome && g.away_score > g.home_score)
+        if (!isWin) continue
+        mvpTotal += parseFloat(calcMvpScore({
+          pts: row.pts || 0, reb: row.reb || 0, ast: row.ast || 0,
+          stl: row.stl || 0, blk: row.blk || 0, tov: row.tov || 0, pf: row.pf || 0,
+        }))
       }
-      mvpTotal += parseFloat(calcMvpScore(stat))
+      return { ...p, mvp_score: mvpTotal, fg_pct: fgPct, fg3_pct: fg3Pct }
+    })
+  } else {
+    // 选具体位置：只统计该位置的记录，按 player_id 分组
+    const filtered = data.filter(r => r.player_position === activePosition.value)
+
+    if (filtered.length === 0) { await loadEmptyLeaderboard(); return }
+    
+    const map = {}
+    for (const row of filtered) {
+      const pid = row.player_id
+      if (!map[pid]) {
+        map[pid] = {
+          player_id: pid,
+          player_name: row.player_name || '-',
+          avatar_url: playerAvatarMap[pid] || row.player_avatar_url || null,
+          player_position: activePosition.value,
+          games_played: 0,
+          pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0,
+          fg2m: 0, fg2a: 0, fg3m: 0, fg3a: 0
+        }
+      }
+      const p = map[pid]
+      p.games_played++
+      for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'fg2m', 'fg2a', 'fg3m', 'fg3a']) {
+        p[k] += (row[k] || 0)
+      }
     }
-    return { ...p, mvp_score: mvpTotal, fg_pct: fgPct, fg3_pct: fg3Pct }
-  })
+    leaderboard.value = Object.values(map).map(p => {
+      const totalFG = p.fg2m + p.fg3m
+      const totalFGA = p.fg2a + p.fg3a
+      const fgPct = totalFGA >= 5 ? (totalFG / totalFGA * 100) : null
+      const total3 = p.fg3m + p.fg3a
+      const fg3Pct = total3 >= 5 ? (p.fg3m / total3 * 100) : null
+      let mvpTotal = 0
+      for (const row of filtered) {
+        if (row.player_id !== p.player_id) continue
+        const g = gameMap[row.game_id]
+        if (!g) continue
+        const isHome = row.team_id === g.home_team_id
+        const isWin = (isHome && g.home_score > g.away_score) || (!isHome && g.away_score > g.home_score)
+        if (!isWin) continue
+        mvpTotal += parseFloat(calcMvpScore({
+          pts: row.pts || 0, reb: row.reb || 0, ast: row.ast || 0,
+          stl: row.stl || 0, blk: row.blk || 0, tov: row.tov || 0, pf: row.pf || 0,
+        }))
+      }
+      return { ...p, mvp_score: mvpTotal, fg_pct: fgPct, fg3_pct: fg3Pct }
+    })
+  }
   loading.value = false
 }
 
 onMounted(loadLeaderboard)
-watch(activeGameType, loadLeaderboard)
+watch(activeGameType, () => { updateQueryParams(); loadLeaderboard() })
+watch(activePosition, () => { updateQueryParams(); loadLeaderboard() })
+watch(activeSortMode, updateQueryParams)
+watch(activeCategory, updateQueryParams)
 </script>
