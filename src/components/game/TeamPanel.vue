@@ -22,11 +22,6 @@
           :class="timeoutBtnClass" title="请求暂停：点击后剩余次数 -1，并自动停表">
           ⏸ 暂停 {{ timeoutsRemaining }}
         </button>
-        <button v-if="showTimeouts && timeoutsUsed > 0" @click="$emit('timeout', { teamId, delta: -1 })"
-          :disabled="!canRecord"
-          class="text-[12px] px-2 py-1 rounded-lg font-bold flex-shrink-0 bg-dark-800 text-dark-400
-                 border border-dark-700/50 hover:text-white transition-all active:scale-95"
-          title="撤销一次暂停">−</button>
       </div>
       <div class="flex items-center gap-1.5 flex-shrink-0">
         <!-- 换人 / 选择首发 -->
@@ -400,7 +395,6 @@ const props = defineProps({
   gameStatus: String,
   teamFouls: { type: Number, default: 0 },
   timeoutsRemaining: { type: Number, default: 0 },
-  timeoutsUsed: { type: Number, default: 0 },
   readonly: { type: Boolean, default: false },
   lineupReadonly: { type: Boolean, default: false },
   lastUndoAction: { type: Array, default: () => [] },

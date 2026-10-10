@@ -186,7 +186,6 @@
           :game-status="gameStore.currentGame.status"
           :team-fouls="teamFouls.home"
           :timeouts-remaining="homeTimeoutsRemaining"
-          :timeouts-used="homeTimeoutsUsed"
           :readonly="!canRecord"
           :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
@@ -213,7 +212,6 @@
           :game-status="gameStore.currentGame.status"
           :team-fouls="teamFouls.away"
           :timeouts-remaining="awayTimeoutsRemaining"
-          :timeouts-used="awayTimeoutsUsed"
           :readonly="!canRecord"
           :lineup-readonly="!canManageLineup"
           :last-undo-action="lastUndoAction"
@@ -255,7 +253,7 @@ import { useAuthStore } from '@/stores/auth'
 import { fmtClock, quarterLabel } from '@/utils/helpers'
 import { supabase } from '@/utils/supabase'
 import { useTeamFouls } from '@/composables/useTeamFouls'
-import { timeoutsRemaining, timeoutsUsed, timeoutMax, timeoutKey } from '@/composables/useTimeouts'
+import { timeoutsRemaining, timeoutMax, timeoutKey } from '@/composables/useTimeouts'
 import TeamPanel from '@/components/game/TeamPanel.vue'
 
 const route = useRoute()
@@ -288,9 +286,7 @@ const { teamFouls, virtualQuarter, loadTeamFouls } = useTeamFouls(
 
 // ── 暂停次数（FIBA：上半场 2 次 / 下半场 3 次，按半场独立计算）──
 const homeTimeoutsRemaining = computed(() => timeoutsRemaining(gameStore.currentGame, 'home'))
-const homeTimeoutsUsed = computed(() => timeoutsUsed(gameStore.currentGame, 'home'))
 const awayTimeoutsRemaining = computed(() => timeoutsRemaining(gameStore.currentGame, 'away'))
-const awayTimeoutsUsed = computed(() => timeoutsUsed(gameStore.currentGame, 'away'))
 
 // 记录/撤销一次暂停：先乐观更新本地，失败回滚；成功由 realtime 覆盖为服务端值
 // 记录暂停（非撤销）时同步停表——正规比赛中请求暂停即停表

@@ -103,6 +103,7 @@ let listChannel = null
 let foulTimer = null
 let listTimer = null
 let finishedTimer = null
+let pollTimer = null
 
 // ── 认证流程 ──
 async function evaluateAuth() {
@@ -198,6 +199,7 @@ async function openGame(gid) {
   loadStats(g)
   loadCourtLineup(gid)
   subscribeLive(gid)
+  startPolling(gid)
 }
 
 async function loadStats(g) {
@@ -284,6 +286,24 @@ function unsubscribeLive() {
   if (liveChannel) { supabase.removeChannel(liveChannel); liveChannel = null }
 }
 
+// 兜底轮询：现场网络丢包时 realtime 可能漏事件（尤其暂停状态），
+// 每 5 秒重拉一次比赛行，保证大屏的暂停/节次/比分状态最终一致
+function startPolling(gid) {
+  stopPolling()
+  pollTimer = setInterval(async () => {
+    if (state.value !== 'live' || game.value?.id !== gid) return
+    const { data } = await supabase.from('games').select('*').eq('id', gid).maybeSingle()
+    if (data && game.value?.id === gid) {
+      game.value = { ...game.value, ...data }
+      debounceFouls()
+    }
+  }, 5000)
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
 function debounceFouls() {
   clearTimeout(foulTimer)
   foulTimer = setTimeout(loadTeamFouls, 600)
@@ -298,6 +318,7 @@ watch(() => game.value?.status, (s) => {
 function closeGame() {
   clearTimeout(finishedTimer)
   unsubscribeLive()
+  stopPolling()
   game.value = null
   stats.value = []
   courtLineup.value = []
@@ -317,6 +338,7 @@ onBeforeUnmount(() => {
   clearTimeout(foulTimer)
   clearTimeout(listTimer)
   clearTimeout(finishedTimer)
+  stopPolling()
   unsubscribeLive()
   unsubscribeList()
 })

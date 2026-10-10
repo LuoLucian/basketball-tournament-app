@@ -1,12 +1,14 @@
 // 位置加权效率评分权重（与「教练面板」效率评分算法同源）
 // 教练页 GameDetailView 的 calcRating 使用同一套权重，保持两处口径一致
+// 已降低「位置」的影响：各位置权重按 50% 向中立基准（FLEX）收敛，
+// 使位置差异不再主导评分（数值越接近 FLEX 行，代表位置权重越小）
 export const POSITION_WEIGHTS = {
-  PG:   { pts: 0.9, reb: 0.9, ast: 1.8, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fga_miss: -0.5, fta_miss: -0.3 },
-  SG:   { pts: 1.2, reb: 1.0, ast: 1.3, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fga_miss: -0.6, fta_miss: -0.3 },
-  SF:   { pts: 1.1, reb: 1.2, ast: 1.1, stl: 1.0, blk: 0.9, tov: -0.8, pf: -0.5, fga_miss: -0.6, fta_miss: -0.3 },
-  PF:   { pts: 1.0, reb: 1.5, ast: 0.9, stl: 0.9, blk: 1.3, tov: -0.7, pf: -0.6, fga_miss: -0.5, fta_miss: -0.3 },
-  C:    { pts: 1.0, reb: 1.8, ast: 0.7, stl: 0.7, blk: 1.6, tov: -0.6, pf: -0.6, fga_miss: -0.4, fta_miss: -0.3 },
-  FLEX: { pts: 1.0, reb: 1.2, ast: 1.2, stl: 1.0, blk: 1.0, tov: -0.7, pf: -0.5, fga_miss: -0.5, fta_miss: -0.3 }
+  PG:   { pts: 0.95, reb: 1.05, ast: 1.5,  stl: 1.1,  blk: 0.85, tov: -0.75, pf: -0.5,  fga_miss: -0.5,  fta_miss: -0.3 },
+  SG:   { pts: 1.1,  reb: 1.1,  ast: 1.25, stl: 1.1,  blk: 0.85, tov: -0.75, pf: -0.5,  fga_miss: -0.55, fta_miss: -0.3 },
+  SF:   { pts: 1.05, reb: 1.2,  ast: 1.15, stl: 1.0,  blk: 0.95, tov: -0.75, pf: -0.5,  fga_miss: -0.55, fta_miss: -0.3 },
+  PF:   { pts: 1.0,  reb: 1.35, ast: 1.05, stl: 0.95, blk: 1.15, tov: -0.7,  pf: -0.55, fga_miss: -0.5,  fta_miss: -0.3 },
+  C:    { pts: 1.0,  reb: 1.5,  ast: 0.95, stl: 0.85, blk: 1.3,  tov: -0.65, pf: -0.55, fga_miss: -0.45, fta_miss: -0.3 },
+  FLEX: { pts: 1.0,  reb: 1.2,  ast: 1.2,  stl: 1.0,  blk: 1.0,  tov: -0.7,  pf: -0.5,  fga_miss: -0.5,  fta_miss: -0.3 }
 }
 
 // 位置核心指标（用于「位置贡献度」）
@@ -44,13 +46,14 @@ export function weightedEfficiency(s, pos = 'FLEX') {
 // ════════════════════════════════════════════════════════════
 
 // MVP / 评分权重（投丢按 2 分/3 分/罚球分别计罚，与详情页一致）
+// 同样降低「位置」影响：各位置按 50% 向 FLEX 中立基准收敛
 export const MVP_POSITION_WEIGHTS = {
-  PG:  { pts: 0.9, reb: 0.9, ast: 1.8, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  SG:  { pts: 1.2, reb: 1.0, ast: 1.3, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  SF:  { pts: 1.1, reb: 1.2, ast: 1.1, stl: 1.0, blk: 0.9, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  PF:  { pts: 1.0, reb: 1.5, ast: 0.9, stl: 0.9, blk: 1.3, tov: -0.7, pf: -0.6, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  C:   { pts: 1.0, reb: 1.8, ast: 0.7, stl: 0.7, blk: 1.6, tov: -0.6, pf: -0.6, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  FLEX:{ pts: 1.0, reb: 1.2, ast: 1.2, stl: 1.0, blk: 1.0, tov: -0.7, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 }
+  PG:  { pts: 0.95, reb: 1.05, ast: 1.5,  stl: 1.1,  blk: 0.85, tov: -0.75, pf: -0.5,  fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  SG:  { pts: 1.1,  reb: 1.1,  ast: 1.25, stl: 1.1,  blk: 0.85, tov: -0.75, pf: -0.5,  fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  SF:  { pts: 1.05, reb: 1.2,  ast: 1.15, stl: 1.0,  blk: 0.95, tov: -0.75, pf: -0.5,  fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  PF:  { pts: 1.0,  reb: 1.35, ast: 1.05, stl: 0.95, blk: 1.15, tov: -0.7,  pf: -0.55, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  C:   { pts: 1.0,  reb: 1.5,  ast: 0.95, stl: 0.85, blk: 1.3,  tov: -0.65, pf: -0.55, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
+  FLEX:{ pts: 1.0,  reb: 1.2,  ast: 1.2,  stl: 1.0,  blk: 1.0,  tov: -0.7,  pf: -0.5,  fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 }
 }
 
 // MVP 基础分（位置加权，含投丢惩罚）

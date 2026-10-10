@@ -1028,7 +1028,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useGameStore } from '@/stores/game'
 import { supabase } from '@/utils/supabase'
 import { GAME_STATUS_LABELS, getInitials, fmtDateTime, quarterLabel } from '@/utils/helpers'
-import { POSITION_WEIGHTS, POSITION_FOCUS } from '@/utils/efficiency'
+import { POSITION_WEIGHTS, POSITION_FOCUS, MVP_POSITION_WEIGHTS } from '@/utils/efficiency'
 import { useTeamFouls } from '@/composables/useTeamFouls'
 import ScreenDisplay from '@/components/game/ScreenDisplay.vue'
 
@@ -1202,16 +1202,7 @@ function getTeamStats(side) {
   return stats.value.filter(s => s.team_id === teamId)
 }
 
-// MVP PER 评分算法（与教练面板一致）
-const MVP_POSITION_WEIGHTS = {
-  PG:  { pts: 0.9, reb: 0.9, ast: 1.8, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  SG:  { pts: 1.2, reb: 1.0, ast: 1.3, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  SF:  { pts: 1.1, reb: 1.2, ast: 1.1, stl: 1.0, blk: 0.9, tov: -0.8, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  PF:  { pts: 1.0, reb: 1.5, ast: 0.9, stl: 0.9, blk: 1.3, tov: -0.7, pf: -0.6, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  C:   { pts: 1.0, reb: 1.8, ast: 0.7, stl: 0.7, blk: 1.6, tov: -0.6, pf: -0.6, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 },
-  FLEX:{ pts: 1.0, reb: 1.2, ast: 1.2, stl: 1.0, blk: 1.0, tov: -0.7, pf: -0.5, fg2_miss: -0.4, fg3_miss: -0.4, ft_miss: -0.3 }
-}
-
+// MVP PER 评分算法（权重与 @/utils/efficiency 统一，位置影响已降低）
 function calcMvpRating(s, pos) {
   const w = MVP_POSITION_WEIGHTS[pos] || MVP_POSITION_WEIGHTS.FLEX
   const fg2Miss = (s.fg2a || 0) - (s.fg2m || 0)
@@ -1994,15 +1985,7 @@ function changeStintPosition(playerId, stintIndex, newPosition) {
   // 记录该阶段的位置覆盖
   stint.stintPosition = newPosition
 
-  // 用新位置重算该阶段评分（使用业余友好权重）
-  const POSITION_WEIGHTS = {
-    PG:  { pts: 0.9, reb: 0.9, ast: 1.8, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fga_miss: -0.5, fta_miss: -0.3 },
-    SG:  { pts: 1.2, reb: 1.0, ast: 1.3, stl: 1.2, blk: 0.7, tov: -0.8, pf: -0.5, fga_miss: -0.6, fta_miss: -0.3 },
-    SF:  { pts: 1.1, reb: 1.2, ast: 1.1, stl: 1.0, blk: 0.9, tov: -0.8, pf: -0.5, fga_miss: -0.6, fta_miss: -0.3 },
-    PF:  { pts: 1.0, reb: 1.5, ast: 0.9, stl: 0.9, blk: 1.3, tov: -0.7, pf: -0.6, fga_miss: -0.5, fta_miss: -0.3 },
-    C:   { pts: 1.0, reb: 1.8, ast: 0.7, stl: 0.7, blk: 1.6, tov: -0.6, pf: -0.6, fga_miss: -0.4, fta_miss: -0.3 },
-    FLEX:{ pts: 1.0, reb: 1.2, ast: 1.2, stl: 1.0, blk: 1.0, tov: -0.7, pf: -0.5, fga_miss: -0.5, fta_miss: -0.3 }
-  }
+  // 用新位置重算该阶段评分（权重与 @/utils/efficiency 统一）
   const w = POSITION_WEIGHTS[newPosition] || POSITION_WEIGHTS.FLEX
   const stintMins = Math.ceil(parseInt(stint.minutes) / 60) || 1
   const fgaMiss = (stint.fg2a || 0) - (stint.fg2m || 0)
@@ -2131,13 +2114,14 @@ function getLineupDurationSec(lineupEntry) {
 }
 
 // 简化版评分函数（供定时器使用，与 changeStintPosition 一致）
+// 位置权重同样按 50% 向 FLEX 中立基准收敛，降低位置影响
 const TIMER_POSITION_WEIGHTS = {
-  PG:  { pts: 1.2, reb: 0.8, ast: 1.8, stl: 1.5, blk: 0.5, tov: -1.2, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 },
-  SG:  { pts: 1.5, reb: 0.8, ast: 1.2, stl: 1.2, blk: 0.5, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
-  SF:  { pts: 1.3, reb: 1.0, ast: 1.1, stl: 1.1, blk: 0.8, tov: -1.0, pf: -0.8, fga_miss: -0.7, fta_miss: -0.4 },
-  PF:  { pts: 1.2, reb: 1.5, ast: 0.8, stl: 0.9, blk: 1.2, tov: -1.0, pf: -0.9, fga_miss: -0.6, fta_miss: -0.5 },
-  C:   { pts: 1.2, reb: 1.8, ast: 0.6, stl: 0.7, blk: 1.6, tov: -0.8, pf: -0.9, fga_miss: -0.5, fta_miss: -0.5 },
-  FLEX:{ pts: 1.2, reb: 1.2, ast: 1.2, stl: 1.2, blk: 1.2, tov: -1.0, pf: -0.8, fga_miss: -0.6, fta_miss: -0.4 }
+  PG:  { pts: 1.2,  reb: 1.0,  ast: 1.5,  stl: 1.35, blk: 0.85, tov: -1.1,  pf: -0.8,  fga_miss: -0.6,  fta_miss: -0.4 },
+  SG:  { pts: 1.35, reb: 1.0,  ast: 1.2,  stl: 1.2,  blk: 0.85, tov: -1.0,  pf: -0.8,  fga_miss: -0.65, fta_miss: -0.4 },
+  SF:  { pts: 1.25, reb: 1.1,  ast: 1.15, stl: 1.15, blk: 1.0,  tov: -1.0,  pf: -0.8,  fga_miss: -0.65, fta_miss: -0.4 },
+  PF:  { pts: 1.2,  reb: 1.35, ast: 1.0,  stl: 1.05, blk: 1.2,  tov: -1.0,  pf: -0.85, fga_miss: -0.6,  fta_miss: -0.45 },
+  C:   { pts: 1.2,  reb: 1.5,  ast: 0.9,  stl: 0.95, blk: 1.4,  tov: -0.9,  pf: -0.85, fga_miss: -0.55, fta_miss: -0.45 },
+  FLEX:{ pts: 1.2,  reb: 1.2,  ast: 1.2,  stl: 1.2,  blk: 1.2,  tov: -1.0,  pf: -0.8,  fga_miss: -0.6,  fta_miss: -0.4 }
 }
 
 function quickRecalcStintRating(stint, pos) {
