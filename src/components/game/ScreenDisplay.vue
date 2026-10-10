@@ -129,10 +129,8 @@
             </header>
             <div class="sc-hot-list">
               <div v-for="(p, i) in col.list" :key="p.player_id" class="sc-hot-item"
-                :class="i === 0 ? 'sc-hot-item-top' : ''" :style="{ '--i': i, '--tc': col.color }">
-                <span class="sc-hot-rank" :class="i === 0 ? 'sc-hot-rank-top' : ''">
-                  <span v-if="i === 0">👑</span><span v-else>{{ i + 1 }}</span>
-                </span>
+                :style="{ '--i': i, '--tc': col.color }">
+                <span class="sc-hot-rank">{{ i + 1 }}</span>
                 <span class="sc-avatar sc-hot-avatar" :style="{ '--tc': col.color }">
                   <img v-if="hAvatar(p.player_id)" :src="hAvatar(p.player_id)" alt="" />
                   <span v-else class="sc-avatar-fb">{{ hJersey(p.player_id) ?? (hName(p.player_id)?.[0] || '球') }}</span>
@@ -1226,12 +1224,10 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.035);
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
-.sc-hot-item:first-child { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.16); }
 .sc-hot-rank {
   flex: 0 0 auto; width: 1.7em; text-align: center;
   font-size: clamp(20px, 2.1vw, 44px); font-weight: 900; font-style: italic; color: #4b5563;
 }
-.sc-hot-rank-top { color: #fbbf24; }
 .sc-hot-avatar { font-size: clamp(30px, 3.2vw, 66px); width: 1.7em; height: 1.7em; }
 .sc-hot-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25em; }
 .sc-hot-name {
@@ -1247,68 +1243,31 @@ onBeforeUnmount(() => {
 .sc-hot-eff em { font-size: clamp(11px, 1vw, 20px); font-style: normal; font-weight: 700; color: #6b7280; letter-spacing: 0.1em; }
 .sc-hot-empty { margin: auto; font-size: clamp(16px, 1.6vw, 32px); color: #4b5563; }
 
-/* 高效页入场动画：标题淡入下滑、队伍从两侧错开飞入、球员逐行弹入 */
+/* 高效页入场动画：标题淡入下滑，球员卡片按 1/2/3 顺序逐张淡入上浮（不突出头名） */
 .sc-hot-head { animation: scHotHeadIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes scHotHeadIn {
   from { opacity: 0; transform: translateY(-2.4vh); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.sc-hot-col {
-  animation: scHotColIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--ci) * 0.14s);
-}
-@keyframes scHotColIn {
-  from { opacity: 0; transform: translateX(calc(var(--ci) * 8vw - 4vw)) scale(0.97); }
-  to   { opacity: 1; transform: translateX(0) scale(1); }
-}
+.sc-hot-col { animation: scHotColIn 0.5s ease-out both; animation-delay: calc(var(--ci) * 0.1s); }
+@keyframes scHotColIn { from { opacity: 0; } to { opacity: 1; } }
 .sc-hot-item {
   position: relative; overflow: hidden;
-  animation: scHotItemIn 0.62s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--ci) * 0.14s + var(--i) * 0.1s + 0.2s);
+  animation: scHotItemIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i) * 0.12s + var(--ci) * 0.08s + 0.1s);
 }
 @keyframes scHotItemIn {
-  0%   { opacity: 0; transform: translateY(3.4vh) scale(0.94); }
-  60%  { opacity: 1; transform: translateY(-0.5vh) scale(1.015); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(3vh); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-/* 队伍色描边高亮 */
+/* 队伍色描边（每张卡片一致，不区分名次） */
 .sc-hot-item::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 0.45vw;
   background: var(--tc); opacity: 0.85;
-  animation: scHotBar 0.5s ease-out both;
-  animation-delay: calc(var(--ci) * 0.14s + var(--i) * 0.1s + 0.2s);
+  animation: scHotBar 0.45s ease-out both;
+  animation-delay: calc(var(--i) * 0.12s + var(--ci) * 0.08s + 0.1s);
 }
 @keyframes scHotBar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
-/* 头名：金色光晕呼吸 + 掠光扫过 */
-.sc-hot-item-top {
-  background: linear-gradient(100deg, rgba(251, 191, 36, 0.16), rgba(255, 255, 255, 0.06)) !important;
-  border-color: rgba(251, 191, 36, 0.5) !important;
-  box-shadow: 0 0 2.6vh rgba(251, 191, 36, 0.22), inset 0 0 2.2vh rgba(251, 191, 36, 0.1);
-  animation: scHotItemIn 0.62s cubic-bezier(0.22, 1, 0.36, 1) both,
-             scHotTopGlow 2.4s ease-in-out infinite 1s;
-  animation-delay: calc(var(--ci) * 0.14s + 0.2s), calc(var(--ci) * 0.14s + 0.9s);
-}
-@keyframes scHotTopGlow {
-  0%, 100% { box-shadow: 0 0 2.6vh rgba(251, 191, 36, 0.22), inset 0 0 2.2vh rgba(251, 191, 36, 0.1); }
-  50%      { box-shadow: 0 0 4.2vh rgba(251, 191, 36, 0.42), inset 0 0 3vh rgba(251, 191, 36, 0.18); }
-}
-.sc-hot-item-top::after {
-  content: ''; position: absolute; top: 0; bottom: 0; width: 32%;
-  left: -40%; pointer-events: none;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.28), transparent);
-  animation: scHotShine 1.6s ease-out 1.1s both;
-}
-@keyframes scHotShine { from { left: -40%; } to { left: 130%; } }
-.sc-hot-rank-top { animation: scHotCrown 1.6s ease-in-out infinite; display: inline-block; }
-@keyframes scHotCrown {
-  0%, 100% { transform: translateY(0) rotate(-4deg); }
-  50%      { transform: translateY(-0.5vh) rotate(4deg); }
-}
-.sc-hot-eff b { animation: scHotEffPop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
-@keyframes scHotEffPop {
-  from { opacity: 0; transform: scale(0.5); }
-  to   { opacity: 1; transform: scale(1); }
-}
 
 /* ── 结束态：MVP + 评分页 ── */
 .sc-mvp {
