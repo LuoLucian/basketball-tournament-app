@@ -45,17 +45,31 @@
                     <span class="text-[10px] text-dark-500 group-hover:text-primary-400 transition-colors">上传头像</span>
                   </div>
                 </div>
-                <!-- 上传中遮罩 -->
-                <div v-if="uploadingAvatar" class="absolute inset-0 rounded-full bg-dark-900/70 flex items-center justify-center">
+                <!-- 上传中/压缩中遮罩 -->
+                <div v-if="uploadingAvatar || compressingAvatar"
+                  class="absolute inset-0 rounded-full bg-dark-900/70 flex flex-col items-center justify-center gap-1">
                   <svg class="w-5 h-5 text-primary-400 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                   </svg>
+                  <span class="text-[9px] text-primary-300">{{ compressingAvatar ? '压缩中' : '上传中' }}</span>
                 </div>
+                <!-- 查看完整照片 -->
+                <button v-if="avatarPreview && !uploadingAvatar && !compressingAvatar" type="button"
+                  title="查看完整照片"
+                  class="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-dark-800 border border-dark-600
+                         text-dark-300 hover:text-primary-400 hover:border-primary-500/40
+                         flex items-center justify-center transition-colors duration-150"
+                  @click.stop="lightboxSrc = avatarPreview">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                  </svg>
+                </button>
               </div>
-              <input ref="avatarInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp"
+              <input ref="avatarInput" type="file" accept="image/*"
                 class="hidden" @change="handleAvatarChange" />
-              <p class="text-[10px] text-dark-600 text-center mt-1">点击上传</p>
+              <p class="text-[10px] text-dark-600 text-center mt-1">点击上传（自动压缩）</p>
             </div>
             <!-- 姓名输入 -->
             <div class="flex-1 form-group">
@@ -242,6 +256,9 @@
         </router-link>
       </div>
     </div>
+
+    <!-- 完整照片查看 -->
+    <ImageLightbox v-if="lightboxSrc" :src="lightboxSrc" @close="lightboxSrc = ''" />
   </div>
 </template>
 
@@ -249,8 +266,10 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { supabase } from '@/utils/supabase'
+import { supabase, storagePublicUrl } from '@/utils/supabase'
 import { getInitials, POSITION_LABELS } from '@/utils/helpers'
+import { compressImage } from '@/utils/image'
+import ImageLightbox from '@/components/ui/ImageLightbox.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -273,6 +292,8 @@ const deleting = ref(false)
 const avatarPreview = ref(null)
 const avatarFile = ref(null)
 const uploadingAvatar = ref(false)
+const compressingAvatar = ref(false)
+const lightboxSrc = ref('')
 
 // 预设技能标签
 const PRESET_SKILLS = ['三分', '突破', '防守', '篮板', '助攻', '盖帽', '抢断', '中投', '运球', '扣篮']
@@ -302,7 +323,7 @@ function openEditForm(player) {
   formData.weight = player.weight || null
   formData.skills = player.skills ? player.skills.split(',').filter(Boolean) : []
   formData.notes = player.notes || ''
-  avatarPreview.value = player.avatar_url || null
+  setAvatarPreview(player.avatar_url || null)
   avatarFile.value = null
   showForm.value = true
 }
@@ -320,9 +341,17 @@ function resetForm() {
   formData.weight = null
   formData.skills = []
   formData.notes = ''
-  avatarPreview.value = null
+  setAvatarPreview(null)
   avatarFile.value = null
   customSkill.value = ''
+}
+
+// 统一管理预览地址，替换时回收上一个 blob URL
+function setAvatarPreview(url) {
+  if (avatarPreview.value && avatarPreview.value.startsWith('blob:')) {
+    URL.revokeObjectURL(avatarPreview.value)
+  }
+  avatarPreview.value = url
 }
 
 function triggerAvatarUpload() {
@@ -355,16 +384,30 @@ function removeSkill(idx) {
   formData.skills.splice(idx, 1)
 }
 
-// ── 头像上传 ──
-function handleAvatarChange(e) {
-  const file = e.target.files[0]
+// ── 头像上传：先自适应压缩再预览/上传 ──
+async function handleAvatarChange(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''   // 允许再次选择同一张图片
   if (!file) return
-  if (file.size > 2 * 1024 * 1024) {
-    alert('图片大小不能超过 2MB')
+  if (!file.type || !file.type.startsWith('image/')) {
+    alert('请选择图片文件')
     return
   }
-  avatarFile.value = file
-  avatarPreview.value = URL.createObjectURL(file)
+  compressingAvatar.value = true
+  try {
+    const res = await compressImage(file, { maxDim: 1600, maxSize: 1.2 * 1024 * 1024 })
+    if (!res) {
+      alert('图片处理失败，请换一张重试')
+      return
+    }
+    avatarFile.value = res.file
+    setAvatarPreview(URL.createObjectURL(res.file))
+  } catch (err) {
+    console.error('图片压缩失败:', err)
+    alert('图片处理失败，请换一张重试')
+  } finally {
+    compressingAvatar.value = false
+  }
 }
 
 async function uploadAvatar(playerId) {
@@ -378,11 +421,8 @@ async function uploadAvatar(playerId) {
       .upload(filePath, avatarFile.value, { upsert: true })
     if (error) throw error
 
-    // 获取公开 URL
-    const { data: urlData } = supabase.storage
-      .from('avatars')
-      .getPublicUrl(filePath)
-    const publicUrl = urlData.publicUrl + '?t=' + Date.now()
+    // 获取公开 URL（固定直连域名，避免中转到期后头像失效）
+    const publicUrl = storagePublicUrl('avatars', filePath) + '?t=' + Date.now()
 
     // 通过 RPC 写入 avatar_url（绕过 RLS）
     const { error: updateErr } = await supabase.rpc('update_player_avatar', {

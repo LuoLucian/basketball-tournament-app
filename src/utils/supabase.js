@@ -45,6 +45,22 @@ function makeClient(url) {
 // 模块加载时先建占位客户端，initSupabase() 后按选中线路重建
 export let supabase = makeClient(PRIMARY_URL)
 
+/**
+ * Storage 公开地址：固定走「直连」域名，不跟随竞速选中的线路。
+ * 原因：头像/队标的 publicUrl 会被写入数据库长期保存，若写入时用中转域名，
+ * 中转服务器到期/停用后图片全部失效（裂图）。直连域名是 Supabase 官方地址，永久有效。
+ */
+const STORAGE_ORIGIN = (BACKUP_URL || PRIMARY_URL || '').replace(/\/+$/, '')
+
+export function storagePublicUrl(bucket, path) {
+  const safePath = String(path)
+    .split('/')
+    .filter((s) => s !== '')
+    .map((s) => encodeURIComponent(s))
+    .join('/')
+  return `${STORAGE_ORIGIN}/storage/v1/object/public/${bucket}/${safePath}`
+}
+
 // 单线路测速：任何 HTTP 响应（含 401）都算可达，返回耗时；超时/网络错误记 Infinity
 function timed(url, timeoutMs) {
   const ctrl = new AbortController()
