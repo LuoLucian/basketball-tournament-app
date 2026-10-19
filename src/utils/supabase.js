@@ -45,6 +45,22 @@ function makeClient(url) {
 // 模块加载时先建占位客户端，initSupabase() 后按选中线路重建
 export let supabase = makeClient(PRIMARY_URL)
 
+// 当前生效线路（供图片等静态资源跟随，避免接口走中转、图片仍硬连直连）
+let activeUrl = PRIMARY_URL
+
+export function getActiveUrl() {
+  return activeUrl || PRIMARY_URL
+}
+
+// 所有可用线路（当前线路优先，其后为其它线路），用于图片加载失败时的自动重试
+export function getRouteUrls() {
+  const list = [getActiveUrl()]
+  for (const u of [BACKUP_URL, PRIMARY_URL]) {
+    if (u && !list.includes(u)) list.push(u)
+  }
+  return list.filter(Boolean)
+}
+
 /**
  * Storage 公开地址：固定走「直连」域名，不跟随竞速选中的线路。
  * 原因：头像/队标的 publicUrl 会被写入数据库长期保存，若写入时用中转域名，
@@ -102,6 +118,7 @@ export async function initSupabase() {
 
   if (!BACKUP_URL || BACKUP_URL === PRIMARY_URL) {
     supabase = makeClient(PRIMARY_URL)
+    activeUrl = PRIMARY_URL
     return
   }
 
@@ -109,6 +126,7 @@ export async function initSupabase() {
   const cache = readCache()
   if (cache) {
     supabase = makeClient(cache.url)
+    activeUrl = cache.url
     console.info(`[supabase] 使用线路: ${label(cache.url)} → ${cache.url}（上次 ${Math.round(cache.ms)}ms）`)
     refreshRoute()
     return
@@ -119,10 +137,12 @@ export async function initSupabase() {
   const best = a.ms <= b.ms ? a : b
   if (best.ms === Infinity) {
     supabase = makeClient(PRIMARY_URL)
+    activeUrl = PRIMARY_URL
     console.warn('[supabase] 两条线路均不可达，暂用主线路，等待网络恢复')
     return
   }
   supabase = makeClient(best.url)
+  activeUrl = best.url
   writeCache(best.url, best.ms)
   const fmt = (r) => (r.ms === Infinity ? '超时' : `${Math.round(r.ms)}ms`)
   console.info(`[supabase] 路径竞速: 主 ${fmt(a)} / 备 ${fmt(b)} → 选 ${label(best.url)} → ${best.url}`)
