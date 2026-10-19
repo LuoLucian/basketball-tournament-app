@@ -4,8 +4,8 @@
 $ErrorActionPreference = "Stop"
 
 # 设置环境变量
-# 主线路：香港中转就绪后改成 https://sb.你的域名 （当前 = Supabase 直连）
-$env:VITE_SUPABASE_URL = "https://zzuwpanihewhqtyywhny.supabase.co"
+# 主线路：香港中转（119.28.32.62，nginx 反代 Supabase）
+$env:VITE_SUPABASE_URL = "https://sb.119.28.32.62.sslip.io"
 # 备用线路：Supabase 直连（主线路不通时启动自动切换）
 $env:VITE_SUPABASE_URL_BACKUP = "https://zzuwpanihewhqtyywhny.supabase.co"
 $env:VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6dXdwYW5paGV3aHF0eXl3aG55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0ODg3MDgsImV4cCI6MjA5MzA2NDcwOH0.RPaUDBUiwAum3nmgaqmQwWzbNhovcqnUI1CFoyGhBM8"
