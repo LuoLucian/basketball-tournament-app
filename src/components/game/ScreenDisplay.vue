@@ -34,9 +34,19 @@
       <header class="sc-header">
         <div class="sc-header-left">
           <template v-if="isBreak">
-            <span v-for="p in pages" :key="p" class="sc-header-page" :class="page === p ? 'sc-header-page-active' : ''">
+            <button type="button" class="sc-header-page sc-header-score"
+              :class="page === 'score' ? 'sc-header-page-active' : ''"
+              title="返回比分界面" @click="showScore">
+              <svg class="sc-header-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+              </svg>
+              返回比分
+            </button>
+            <span class="sc-header-sep"></span>
+            <button v-for="p in pages" :key="p" type="button" class="sc-header-page"
+              :class="page === p ? 'sc-header-page-active' : ''" @click="selectPage(p)">
               {{ pageLabels[p] }}
-            </span>
+            </button>
           </template>
         </div>
         <div class="sc-header-right">
@@ -49,7 +59,11 @@
       <main v-if="page === 'score'" class="sc-main">
         <!-- 主队 -->
         <div class="sc-team">
-          <div class="sc-team-name" :style="{ color: homeColor }">{{ homeName }}</div>
+          <div class="sc-team-name" :style="{ color: homeColor }">
+            <img v-if="homeTeam?.logo_url" :src="homeTeam.logo_url" :alt="homeTeam.name" class="shrink-0 object-contain"
+              style="width:clamp(36px,4.5vw,96px);height:clamp(36px,4.5vw,96px)" />
+            <span>{{ homeName }}</span>
+          </div>
           <div class="sc-score" :style="{ color: homeColor, textShadow: `0 0 60px ${homeColor}55` }">
             <span :key="scoreFxKey('home')" class="sc-score-num" :class="{ 'sc-score-pop': scoreFx?.side === 'home' }">{{ game?.home_score ?? 0 }}</span>
           </div>
@@ -71,10 +85,11 @@
         <div class="sc-center">
           <template v-if="isOfficial">
             <div v-if="isBreak" class="sc-break-badge">⏸ 暂停中</div>
-            <template v-else>
-              <div class="sc-quarter">{{ quarterLabel(game?.current_quarter || 1, game?.quarters) }}</div>
-              <div class="sc-clock" :class="remainingSecs <= 60 ? 'sc-clock-danger' : ''">{{ fmtClock(remainingSecs) }}</div>
-            </template>
+            <div class="sc-quarter">{{ quarterLabel(game?.current_quarter || 1, game?.quarters) }}</div>
+            <div class="sc-clock" :class="remainingSecs <= 60 ? 'sc-clock-danger' : ''">{{ fmtClock(remainingSecs) }}</div>
+            <div v-if="shotClockEnabled" class="sc-shot" :class="shotClockDanger ? 'sc-shot-danger' : ''">
+              <span class="sc-shot-num">{{ shotClockSecs }}</span>
+            </div>
           </template>
           <template v-else>
             <div v-if="isBreak" class="sc-break-badge">⏸ 暂停中</div>
@@ -96,7 +111,11 @@
 
         <!-- 客队 -->
         <div class="sc-team">
-          <div class="sc-team-name" :style="{ color: awayColor }">{{ awayName }}</div>
+          <div class="sc-team-name" :style="{ color: awayColor }">
+            <img v-if="awayTeam?.logo_url" :src="awayTeam.logo_url" :alt="awayTeam.name" class="shrink-0 object-contain"
+              style="width:clamp(36px,4.5vw,96px);height:clamp(36px,4.5vw,96px)" />
+            <span>{{ awayName }}</span>
+          </div>
           <div class="sc-score" :style="{ color: awayColor, textShadow: `0 0 60px ${awayColor}55` }">
             <span :key="scoreFxKey('away')" class="sc-score-num" :class="{ 'sc-score-pop': scoreFx?.side === 'away' }">{{ game?.away_score ?? 0 }}</span>
           </div>
@@ -113,17 +132,33 @@
             <span class="sc-timeouts-max">/ {{ timeoutsMax }}</span>
           </div>
         </div>
+
+        <!-- 今天的比赛预告（底部常驻条，进行中也有） -->
+        <div v-if="nextGames.length" class="sc-next-strip">
+          <span class="sc-next-label">接下来</span>
+          <template v-for="(g, i) in nextGames" :key="g.id">
+            <span v-if="i > 0" class="sc-next-sep">|</span>
+            <span class="sc-next-item">
+              <span class="sc-next-time">{{ fmtHM(g.scheduled_at) }}</span>
+              <span class="sc-next-team" :style="{ color: g.home_team?.color || '#3b82f6' }">{{ g.home_team?.short_name || g.home_team?.name || '主队' }}</span>
+              <span class="sc-next-vs">vs</span>
+              <span class="sc-next-team" :style="{ color: g.away_team?.color || '#f97316' }">{{ g.away_team?.short_name || g.away_team?.name || '客队' }}</span>
+            </span>
+          </template>
+        </div>
       </main>
 
       <!-- ══ 本节高效球员页（暂停/节间首屏，只播一次）══ -->
       <main v-else-if="page === 'hot'" :key="'hot' + hotAnim" class="sc-hot">
         <div class="sc-hot-head">
-          <span class="sc-hot-title">🔥 本节高效球员</span>
+          <span class="sc-hot-accent"></span>
+          <span class="sc-hot-title">本节高效球员</span>
           <span class="sc-hot-sub">{{ quarterLabel(hotData.quarter || 1, game?.quarters) }} · 效率评分</span>
         </div>
         <div class="sc-hot-cols">
           <section v-for="(col, ci) in hotCols" :key="col.key" class="sc-hot-col" :style="{ '--ci': ci }">
             <header class="sc-hot-col-head">
+              <span class="sc-hot-dot" :style="{ background: col.color, boxShadow: `0 0 1.2vh ${col.color}99` }"></span>
               <span class="sc-hot-team" :style="{ color: col.color }">{{ col.name }}</span>
               <span class="sc-hot-role">{{ col.key === 'home' ? '主队' : '客队' }}</span>
             </header>
@@ -212,7 +247,11 @@
         <!-- 顶部比分条：两队比分 + 节次/时钟 -->
         <div class="sc-strip">
           <div class="sc-strip-side">
-            <span class="sc-strip-name" :style="{ color: homeColor }">{{ homeName }}</span>
+            <span class="sc-strip-name" :style="{ color: homeColor }">
+              <img v-if="homeTeam?.logo_url" :src="homeTeam.logo_url" :alt="homeTeam.name" class="shrink-0 object-contain"
+                style="width:clamp(24px,2.8vw,56px);height:clamp(24px,2.8vw,56px)" />
+              <span class="sc-strip-name-text">{{ homeName }}</span>
+            </span>
             <span class="sc-strip-score" :style="{ color: homeColor }">
               <span :key="scoreFxKey('home')" class="sc-score-num" :class="{ 'sc-score-pop': scoreFx?.side === 'home' }">{{ game?.home_score ?? 0 }}</span>
             </span>
@@ -225,6 +264,7 @@
               <span class="sc-strip-quarter">{{ quarterLabel(game?.current_quarter || 1, game?.quarters) }}</span>
               <span v-if="isBreak" class="sc-strip-badge">暂停</span>
               <span v-else class="sc-strip-clock" :class="remainingSecs <= 60 ? 'sc-strip-clock-danger' : ''">{{ fmtClock(remainingSecs) }}</span>
+              <span v-if="shotClockEnabled" class="sc-strip-shot" :class="shotClockDanger ? 'sc-strip-shot-danger' : ''">{{ shotClockSecs }}</span>
             </template>
             <template v-else>
               <span v-if="isBreak" class="sc-strip-badge">暂停中</span>
@@ -235,7 +275,11 @@
             <span class="sc-strip-score" :style="{ color: awayColor }">
               <span :key="scoreFxKey('away')" class="sc-score-num" :class="{ 'sc-score-pop': scoreFx?.side === 'away' }">{{ game?.away_score ?? 0 }}</span>
             </span>
-            <span class="sc-strip-name" :style="{ color: awayColor }">{{ awayName }}</span>
+            <span class="sc-strip-name" :style="{ color: awayColor }">
+              <img v-if="awayTeam?.logo_url" :src="awayTeam.logo_url" :alt="awayTeam.name" class="shrink-0 object-contain"
+                style="width:clamp(24px,2.8vw,56px);height:clamp(24px,2.8vw,56px)" />
+              <span class="sc-strip-name-text">{{ awayName }}</span>
+            </span>
           </div>
         </div>
 
@@ -345,9 +389,11 @@
         </div>
       </Transition>
 
+      <!-- 窗口模式下显示：一键回到全屏（内嵌 iframe 中通过 postMessage 交由外层页面处理） -->
+      <button v-if="!isFullscreen" class="sc-fs" @click="enterFullscreen" title="回到全屏模式">⛶ 全屏</button>
       <!-- 退出按钮（鼠标移动时显示） -->
-      <button class="sc-exit" :class="controlsVisible ? 'sc-exit-visible' : ''" @click="exit" title="退出大屏模式">✕</button>
-      <div v-if="showHint" class="sc-exit-hint">ESC 退出全屏 · 再按 ESC 或点右上角 ✕ 退出大屏</div>
+      <button v-if="!embed" class="sc-exit" :class="controlsVisible ? 'sc-exit-visible' : ''" @click="exit" title="退出大屏模式">✕</button>
+      <div v-if="showHint && !embed" class="sc-exit-hint">ESC 退出全屏 · 窗口模式下点 ⛶ 回到全屏 · 再按 ESC 退出大屏</div>
     </div>
   </Teleport>
 </template>
@@ -365,7 +411,9 @@ const props = defineProps({
   game: { type: Object, required: true },
   stats: { type: Array, default: () => [] },
   teamFouls: { type: Object, default: () => ({ home: 0, away: 0 }) },
-  courtLineup: { type: Array, default: () => [] }
+  courtLineup: { type: Array, default: () => [] },
+  // embed=true：被竖屏旋转容器以 iframe 内嵌展示，此时不做全屏、不显示退出/提示控件
+  embed: { type: Boolean, default: false }
 })
 const emit = defineEmits(['close'])
 
@@ -411,6 +459,8 @@ const particles = computed(() => Array.from({ length: 26 }, (_, i) => {
 }))
 const homeName = computed(() => props.game?.home_team?.name || '主队')
 const awayName = computed(() => props.game?.away_team?.name || '客队')
+const homeTeam = computed(() => props.game?.home_team || null)
+const awayTeam = computed(() => props.game?.away_team || null)
 const isOfficial = computed(() => props.game?.game_type === 'official')
 
 // ── 暂停次数（FIBA：上半场 2 次 / 下半场 3 次）──
@@ -425,11 +475,40 @@ function foulBoxClass(count, n) {
   return (count || 0) >= 5 ? 'sc-foul-box-danger' : 'sc-foul-box-on'
 }
 
-const isBreak = computed(() =>
-  (props.game?.status === 'active' && !!props.game?.is_paused) ||
-  props.game?.status === 'halftime' ||
-  props.game?.status === 'finished'
-)
+// ── 今天的比赛预告（比分页底部常驻条）──
+const nextGames = ref([])
+let nextTimer = null
+async function loadNextGames() {
+  const now = new Date()
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const dayEnd = new Date(dayStart.getTime() + 86400000)
+  const { data } = await supabase
+    .from('games')
+    .select('id, scheduled_at, home_team:home_team_id(id, name, short_name, color), away_team:away_team_id(id, name, short_name, color)')
+    .eq('status', 'pending')
+    .gte('scheduled_at', dayStart.toISOString())
+    .lt('scheduled_at', dayEnd.toISOString())
+    .order('scheduled_at', { ascending: true })
+    .limit(2)
+  nextGames.value = data || []
+}
+function fmtHM(s) {
+  if (!s) return '时间待定'
+  const d = new Date(s)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+const isBreak = computed(() => {
+  const g = props.game
+  if (!g) return false
+  if (g.status === 'halftime' || g.status === 'finished') return true
+  if (g.status === 'active' && g.is_paused) {
+    // 节间休息（节时钟已重置为满节时长）或队伍暂停 → 轮播；
+    // 总暂停（纯停表，pause_kind='clock'）→ 停留在比分页不轮播
+    return isQuarterBreak.value || g.pause_kind === 'team'
+  }
+  return false
+})
 
 // 节间休息 / 中场 / 结束：数据页不显示上场球员呼吸灯，保持全员状态一致
 // 判定依据：节切换会把 quarter_clock 重置为满节时长，普通暂停只冻结当前剩余秒数
@@ -474,6 +553,22 @@ const remainingSecs = computed(() => {
   const elapsed = Math.max(0, Math.floor((nowTs.value - anchor) / 1000))
   return Math.max(0, base - elapsed)
 })
+
+// 进攻时间（24 秒）：比赛时钟停表时必停，进行中可由记录员手动启停（口径与记录页一致）
+const shotClockRunning = computed(() => clockRunning.value && !!props.game?.shot_clock_running)
+const shotClockSecs = computed(() => {
+  const g = props.game
+  if (!g || !isOfficial.value) return 0
+  const base = g.shot_clock ?? 24
+  if (!shotClockRunning.value || !g.shot_clock_updated_at) return Math.max(0, base)
+  const anchor = new Date(g.shot_clock_updated_at).getTime()
+  if (!anchor || Number.isNaN(anchor)) return Math.max(0, base)
+  const elapsed = Math.max(0, Math.floor((nowTs.value - anchor) / 1000))
+  return Math.max(0, base - elapsed)
+})
+const shotClockDanger = computed(() => shotClockRunning.value && shotClockSecs.value <= 5)
+// 24 秒功能开关：录入页关闭后，大屏同步不显示进攻时间
+const shotClockEnabled = computed(() => props.game?.shot_clock_enabled !== false)
 
 // 球权
 const possessionSet = computed(() => props.game?.possession_home != null)
@@ -754,13 +849,22 @@ const tableWrap = ref(null)
 const rowH = ref(0)        // 每行高度（px），由可用高度 / 显示行数算出
 const tableFont = ref(0)   // 随行高联动的字号
 let scrollRaf = null
-let scrollWait = 0
 let tableRO = null
 
 // 每屏最多铺满 8 行；不足 8 人时按实际人数铺满
 const MAX_FILL_ROWS = 8
 const ROW_MIN = 36
 const ROW_MAX = 160
+
+// 溢出滚动节奏：进入数据页先在顶部定格，再逐行缓慢滚动，到底后定格并瞬移回顶部循环
+const TABLE_HOLD_MS = 3500    // 进入 / 回顶后的定格时长（先看清楚前几名球员）
+const TABLE_TAIL_MS = 2500    // 滚到底后的定格时长
+const ROW_SCROLL_MS = 2000    // 每行滚动耗时（按行高换算速度，跨屏尺寸阅读节奏一致）
+let scrollPhase = 'scroll'    // scroll | holdBottom
+let scrollHoldMs = TABLE_HOLD_MS
+let scrollAcc = 0             // 亚像素累计滚动位置：逐帧增量可能 <0.5px（如 12 人小行高时每帧仅
+                              // 0.4px），浏览器对 scrollTop 赋值取整会把它抹回 0 导致永不滚动，
+                              // 因此必须自行累计真实位置，再整体赋值
 
 let measureKey = ''
 
@@ -791,29 +895,50 @@ function measureAndApply() {
     nextTick(() => {
       const e3 = tableWrap.value
       if (!e3) return
-      if (resetScroll) { e3.scrollTop = 0; scrollWait = 0 }
-      if (e3.scrollHeight - e3.clientHeight > 8) startTableScroll()
+      if (e3.scrollHeight - e3.clientHeight > 8) startTableScroll(resetScroll)
       else stopTableScroll()
     })
   })
 }
 
-function startTableScroll() {
+// restart=true：进入 / 切回数据页时从顶部重新开始（先定格 TABLE_HOLD_MS 再滚动）
+function startTableScroll(restart = false) {
+  const el = tableWrap.value
+  if (!el) return
+  if (restart) {
+    el.scrollTop = 0
+    scrollAcc = 0
+    scrollPhase = 'scroll'
+    scrollHoldMs = TABLE_HOLD_MS
+  }
   if (scrollRaf) return
   let last = performance.now()
-  let dir = 1
   const step = (t) => {
-    const el = tableWrap.value
-    if (!el) { scrollRaf = null; return }
+    const e = tableWrap.value
+    if (!e) { scrollRaf = null; return }
     const dt = Math.min(64, t - last)
     last = t
-    if (scrollWait > 0) {
-      scrollWait -= dt
+    if (scrollHoldMs > 0) {
+      scrollHoldMs -= dt
+    } else if (scrollPhase === 'holdBottom') {
+      // 底部定格结束：瞬移回顶部（不做倒滚动画），重新定格后继续
+      e.scrollTop = 0
+      scrollAcc = 0
+      scrollPhase = 'scroll'
+      scrollHoldMs = TABLE_HOLD_MS
     } else {
-      el.scrollTop += dt * 0.06 * dir
-      const maxTop = el.scrollHeight - el.clientHeight
-      if (dir === 1 && el.scrollTop >= maxTop - 1) { scrollWait = 2600; dir = -1 }
-      else if (dir === -1 && el.scrollTop <= 1) { scrollWait = 1400; dir = 1 }
+      const maxTop = e.scrollHeight - e.clientHeight
+      // 速度按行高换算：每 ROW_SCROLL_MS 滚动一行，不同屏幕尺寸阅读节奏一致。
+      // 逐帧增量 = dt × speed，行高小时不足 0.5px，必须用 scrollAcc 累计
+      const speed = (rowH.value || ROW_MIN) / ROW_SCROLL_MS
+      scrollAcc = Math.min(maxTop, scrollAcc + dt * speed)
+      e.scrollTop = scrollAcc
+      if (scrollAcc >= maxTop - 1) {
+        scrollAcc = maxTop
+        e.scrollTop = maxTop
+        scrollPhase = 'holdBottom'
+        scrollHoldMs = TABLE_TAIL_MS
+      }
     }
     scrollRaf = requestAnimationFrame(step)
   }
@@ -822,6 +947,8 @@ function startTableScroll() {
 
 function stopTableScroll() {
   if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = null }
+  scrollPhase = 'scroll'
+  scrollHoldMs = TABLE_HOLD_MS
 }
 
 // 表格容器尺寸变化（全屏切换/窗口缩放）时重新铺排
@@ -836,40 +963,80 @@ watch([page, displayStats], () => measureAndApply(), { flush: 'post' })
 
 // ── 轮播控制：暂停/结束时自动轮播，恢复进行中则回到比分页 ──
 // 同时监听 status：比赛从「暂停」直接变为「已结束」时也要重建队列，切换到 MVP 页
+// 注意：rotationQueue 必须声明在本 watch 之前——immediate 回调在 setup 期间同步执行，
+// 会立刻调用 startRotation → runRotation 给 rotationQueue 赋值，声明在后会触发 TDZ 报错
+// 轮播队列：
+//   · 进行中暂停/节间：高效页只播一次，之后在主队/客队数据页间循环
+//   · 比赛结束：MVP 页 + 主客队数据页循环（评分与 MVP 随轮播反复展示）
+let rotationQueue = []
 watch([isBreak, () => props.game?.status], ([v]) => {
   if (v) startRotation()
   else stopRotation()
 }, { immediate: true })
 
-// 轮播队列：
-//   · 进行中暂停/节间：高效页只播一次，之后在主队/客队数据页间循环
-//   · 比赛结束：MVP 页 + 主客队数据页循环（评分与 MVP 随轮播反复展示）
-let rotationQueue = []
-function startRotation() {
-  stopRotation()
-  if (isFinished.value) {
-    rotationQueue = ['mvp', 'home', 'away']
-    page.value = rotationQueue[0]
-    mvpAnim.value++   // 触发 MVP 页入场动画重放
-    rotateTimer = setInterval(() => {
-      rotationQueue.shift()
-      if (!rotationQueue.length) rotationQueue = ['mvp', 'home', 'away']
-      page.value = rotationQueue[0]
-    }, ROTATE_MS)
-    return
-  }
-  rotationQueue = ['hot', 'home', 'away']
+// 数据页表格溢出时，停留时长自动延长到「定格 + 逐行滚动 + 尾部定格」，保证能滚到底
+function currentDwellMs() {
+  const p = page.value
+  if (p !== 'home' && p !== 'away') return ROTATE_MS
+  const rows = displayStats.value.length - MAX_FILL_ROWS
+  if (rows <= 0) return ROTATE_MS
+  return Math.max(ROTATE_MS, TABLE_HOLD_MS + rows * ROW_SCROLL_MS + TABLE_TAIL_MS)
+}
+function clearRotateTimer() {
+  if (rotateTimer) { clearTimeout(rotateTimer); rotateTimer = null }
+}
+// 首屏之后的循环队列
+function loopQueue() {
+  return isFinished.value ? ['mvp', 'home', 'away'] : ['home', 'away']
+}
+// 按给定队列开始轮播：先显示队首页，之后每页停留 ROTATE_MS 翻页（数据页按内容延长）
+function runRotation(queue) {
+  clearRotateTimer()
+  rotationQueue = queue.slice()
   page.value = rotationQueue[0]
-  hotAnim.value++   // 触发高效页入场动画重放
-  rotateTimer = setInterval(() => {
+  scheduleRotationStep()
+}
+function scheduleRotationStep() {
+  clearRotateTimer()
+  rotateTimer = setTimeout(() => {
     rotationQueue.shift()
-    if (!rotationQueue.length) rotationQueue = ['home', 'away']
+    if (!rotationQueue.length) rotationQueue = loopQueue()
     page.value = rotationQueue[0]
-  }, ROTATE_MS)
+    scheduleRotationStep()
+  }, currentDwellMs())
+}
+function startRotation() {
+  if (isFinished.value) mvpAnim.value++   // 触发 MVP 页入场动画重放
+  else hotAnim.value++                    // 触发高效页入场动画重放
+  runRotation(pages.value)
+}
+// 手动点击顶部页签：立即切到该页，并重新计时（停留 10 秒后继续自动轮播）
+function selectPage(p) {
+  if (!isBreak.value) return
+  const order = pages.value
+  if (!order.includes(p)) return
+  let queue
+  if (p === order[0]) {
+    queue = order.slice()
+    if (p === 'mvp') mvpAnim.value++
+    else if (p === 'hot') hotAnim.value++
+  } else {
+    const rest = order.slice(1)
+    const i = rest.indexOf(p)
+    queue = rest.slice(i).concat(rest.slice(0, i))
+  }
+  runRotation(queue)
+}
+
+// 手动返回比分界面：停止轮播并固定显示比分页（再点其它页签即可恢复轮播）
+function showScore() {
+  clearRotateTimer()
+  rotationQueue = []
+  page.value = 'score'
 }
 
 function stopRotation() {
-  if (rotateTimer) { clearInterval(rotateTimer); rotateTimer = null }
+  clearRotateTimer()
   rotationQueue = []
   page.value = 'score'
 }
@@ -878,6 +1045,7 @@ function stopRotation() {
 // ESC 行为：全屏中按 ESC 先退出全屏（浏览器原生处理），回到窗口模式后
 // 再按 ESC（或点右上角 ✕）才退出大屏模式
 function onKeydown(e) {
+  if (props.embed) return                 // 内嵌 iframe 中由外层页面负责退出
   if (e.key !== 'Escape') return
   if (document.fullscreenElement) return   // 交给浏览器退出全屏
   emit('close')
@@ -892,17 +1060,58 @@ function exit() {
   emit('close')
 }
 
+// ── 全屏状态跟踪：窗口模式下提供「回到全屏」按钮 ──
+// （按 ESC 只会退出浏览器全屏、回到窗口模式，此时按钮出现，点击即可再次全屏）
+// embed 模式下全屏请求发生在外层父文档上，iframe 内的 document.fullscreenElement 恒为 null，
+// 因此需同时读取同源父文档的全屏状态，手机端全屏后按钮才会隐藏。
+const isFullscreen = ref(false)
+function parentFullscreenElement() {
+  try {
+    if (props.embed && window.parent && window.parent !== window) {
+      return window.parent.document.fullscreenElement
+    }
+  } catch (e) { /* 跨域 / 父文档不可访问时忽略 */ }
+  return null
+}
+function onFullscreenChange() {
+  isFullscreen.value = !!(document.fullscreenElement || parentFullscreenElement())
+}
+isFullscreen.value = !!(document.fullscreenElement || parentFullscreenElement())
+async function enterFullscreen() {
+  if (props.embed) {
+    // 内嵌在竖屏旋转容器（同源 iframe）中：自身无法全屏，通知外层页面请求全屏
+    try { window.parent?.postMessage('sc:fullscreen', location.origin) } catch (e) {}
+    return
+  }
+  try {
+    await rootEl.value?.requestFullscreen?.()
+  } catch (e) { /* 需用户手势或浏览器拒绝时以覆盖层铺满显示即可 */ }
+}
+
 onMounted(() => {
   ticker = setInterval(() => { nowTs.value = Date.now() }, 1000)
+  loadNextGames()
+  nextTimer = setInterval(loadNextGames, 90000)
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
   setTimeout(() => { showHint.value = false }, 4000)
-  rootEl.value?.requestFullscreen?.()
-    .catch(() => { /* 浏览器拒绝全屏时仍以覆盖层铺满显示 */ })
+  if (props.embed) {
+    // 内嵌模式：全屏发生在父文档上，监听父文档的 fullscreenchange 以同步按钮显隐
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.document.addEventListener('fullscreenchange', onFullscreenChange)
+      }
+    } catch (e) { /* 父文档不可访问时忽略 */ }
+  } else {
+    rootEl.value?.requestFullscreen?.()
+      .catch(() => { /* 浏览器拒绝全屏时仍以覆盖层铺满显示 */ })
+  }
 })
 
 onBeforeUnmount(() => {
   if (ticker) clearInterval(ticker)
+  if (nextTimer) clearInterval(nextTimer)
   stopRotation()
   stopTableScroll()
   if (tableRO) { tableRO.disconnect(); tableRO = null }
@@ -913,6 +1122,12 @@ onBeforeUnmount(() => {
   unsubscribeAnnounce()
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('mousemove', onMouseMove)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  try {
+    if (props.embed && window.parent && window.parent !== window) {
+      window.parent.document.removeEventListener('fullscreenchange', onFullscreenChange)
+    }
+  } catch (e) { /* 父文档不可访问时忽略 */ }
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
 })
 </script>
@@ -1000,10 +1215,17 @@ onBeforeUnmount(() => {
 }
 .sc-header-left { display: flex; align-items: center; gap: 0.8vw; min-height: 1em; }
 .sc-header-page {
-  font-size: clamp(12px, 1.2vw, 24px); color: #4b5563; font-weight: 600;
+  font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  font-size: clamp(12px, 1.2vw, 24px); color: #6b7280; font-weight: 600;
   padding: 0.2em 0.9em; border-radius: 999px; border: 1px solid #1f2937;
-  white-space: nowrap;
+  background: transparent; white-space: nowrap;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
+.sc-header-page:hover { color: #cbd5e1; border-color: #334155; }
+.sc-header-score { display: inline-flex; align-items: center; gap: 0.4em; color: #93c5fd; border-color: rgba(96, 165, 250, 0.4); }
+.sc-header-score:hover { color: #bfdbfe; border-color: rgba(96, 165, 250, 0.7); background: rgba(96, 165, 250, 0.1); }
+.sc-header-ico { flex: 0 0 auto; width: 0.95em; height: 0.95em; }
+.sc-header-sep { flex: 0 0 auto; width: 1px; height: 1.5em; background: rgba(255, 255, 255, 0.14); margin: 0 0.15vw; }
 .sc-header-page-active { color: #fff; border-color: #fff; background: rgba(255, 255, 255, 0.08); }
 .sc-header-right { display: flex; align-items: center; gap: 1.2vw; }
 .sc-venue { font-size: clamp(12px, 1.2vw, 22px); color: #888; }
@@ -1022,12 +1244,28 @@ onBeforeUnmount(() => {
   flex: 1; display: flex; align-items: center; justify-content: space-evenly;
   padding: 0 3vw 2vh;
 }
+
+/* ── 今天比赛预告（比分页底部常驻条）── */
+.sc-next-strip {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 1vh;
+  display: flex; align-items: center; gap: 0.9vw;
+  padding: 0.8vh 1.6vw; border-radius: 999px;
+  background: rgba(13, 17, 23, 0.75); border: 1px solid #1f2937;
+  backdrop-filter: blur(6px); white-space: nowrap; max-width: 96vw; overflow: hidden;
+}
+.sc-next-label { font-size: clamp(10px, 1vw, 16px); font-weight: 700; color: #64748b; letter-spacing: 0.15em; }
+.sc-next-sep { color: #1f2937; font-size: clamp(10px, 1vw, 16px); }
+.sc-next-item { display: inline-flex; align-items: center; gap: 0.5vw; }
+.sc-next-time { font-size: clamp(11px, 1.05vw, 18px); font-weight: 700; color: #d1d5db; font-variant-numeric: tabular-nums; }
+.sc-next-team { font-size: clamp(12px, 1.15vw, 20px); font-weight: 700; }
+.sc-next-vs { font-size: clamp(9px, 0.8vw, 13px); font-weight: 700; color: #64748b; }
 .sc-team {
   position: relative; z-index: 1;
   flex: 1; display: flex; flex-direction: column; align-items: center;
   padding: 2vh 1vw; border-radius: 2vw;
 }
 .sc-team-name {
+  display: flex; align-items: center; gap: 1vw;
   font-size: clamp(20px, 3vw, 60px); font-weight: 800; letter-spacing: 0.05em;
   margin-bottom: 1.5vh;
 }
@@ -1071,6 +1309,37 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums; color: #fff;
 }
 .sc-clock-danger { color: #ef4444; animation: sc-pulse 1s infinite; }
+/* 进攻时间（24 秒）—— 无文字，突出数字 */
+.sc-shot {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  min-width: clamp(64px, 6.4vw, 152px);
+  padding: 0.3vh 1.4vw;
+  border-radius: 1vw;
+  background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(0,0,0,0.45));
+  border: 2px solid rgba(255,255,255,0.16);
+  box-shadow: 0 0.6vh 2vh rgba(0,0,0,0.45);
+}
+.sc-shot::before {
+  content: ''; position: absolute; top: 0; left: 14%; right: 14%; height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+}
+.sc-shot-num {
+  font-size: clamp(34px, 4.4vw, 104px);
+  font-weight: 900; line-height: 1.05; letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums; color: #fff;
+  text-shadow: 0 0 1.4vh rgba(255,255,255,0.35);
+}
+.sc-shot-danger {
+  border-color: rgba(239,68,68,0.65);
+  background: linear-gradient(180deg, rgba(239,68,68,0.20), rgba(0,0,0,0.48));
+  box-shadow: 0 0.6vh 2vh rgba(239,68,68,0.35);
+}
+.sc-shot-danger .sc-shot-num {
+  color: #ff5a5a; animation: sc-pulse 1s infinite;
+  text-shadow: 0 0 1.6vh rgba(239,68,68,0.6);
+}
 .sc-break-badge {
   font-size: clamp(20px, 2.6vw, 52px); font-weight: 800; color: #fbbf24;
   animation: sc-pulse 2s infinite;
@@ -1111,11 +1380,13 @@ onBeforeUnmount(() => {
   padding: 0.6vh 3vw 0.9vh;
   border-bottom: 1px solid #1f2937;
 }
-.sc-strip-side { display: flex; align-items: baseline; gap: 1vw; min-width: 0; }
+.sc-strip-side { display: flex; align-items: center; gap: 1vw; min-width: 0; }
 .sc-strip-name {
+  display: inline-flex; align-items: center; gap: 0.5vw;
   font-size: clamp(16px, 1.9vw, 38px); font-weight: 800;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24vw;
+  min-width: 0; max-width: 24vw;
 }
+.sc-strip-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sc-strip-score {
   font-size: clamp(30px, 3.6vw, 76px); font-weight: 900; line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -1125,6 +1396,18 @@ onBeforeUnmount(() => {
 .sc-strip-quarter { font-size: clamp(15px, 1.6vw, 32px); font-weight: 700; color: #d1d5db; }
 .sc-strip-clock { font-size: clamp(24px, 2.6vw, 56px); font-weight: 900; font-variant-numeric: tabular-nums; }
 .sc-strip-clock-danger { color: #ef4444; animation: sc-pulse 1s infinite; }
+.sc-strip-shot {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: clamp(32px, 3.4vw, 74px);
+  padding: 0 0.8vw; border-radius: 0.7vw;
+  font-size: clamp(19px, 2.1vw, 44px); font-weight: 900;
+  font-variant-numeric: tabular-nums; color: #fff;
+  background: rgba(0,0,0,0.42); border: 2px solid rgba(255,255,255,0.16);
+}
+.sc-strip-shot-danger {
+  color: #ff5a5a; border-color: rgba(239,68,68,0.6);
+  animation: sc-pulse 1s infinite;
+}
 .sc-strip-badge { font-size: clamp(15px, 1.6vw, 32px); font-weight: 800; color: #fbbf24; animation: sc-pulse 2s infinite; }
 .sc-strip-status { font-size: clamp(15px, 1.6vw, 32px); font-weight: 700; color: #d1d5db; }
 
@@ -1198,49 +1481,68 @@ onBeforeUnmount(() => {
   padding: 1vh 3vw 2.5vh;
 }
 .sc-hot-head {
-  display: flex; align-items: baseline; gap: 1.4vw; flex-wrap: wrap;
-  padding-bottom: 1.2vh; border-bottom: 1px solid #1f2937;
+  position: relative;
+  display: flex; align-items: center; gap: 1vw; flex-wrap: wrap;
+  padding-bottom: 1.3vh;
 }
-.sc-hot-title { font-size: clamp(26px, 3vw, 62px); font-weight: 900; letter-spacing: 0.02em; }
-.sc-hot-sub { font-size: clamp(12px, 1.15vw, 22px); color: #6b7280; font-weight: 600; }
+.sc-hot-head::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.55), rgba(168, 85, 247, 0.3) 38%, rgba(255, 255, 255, 0) 88%);
+}
+.sc-hot-accent {
+  width: 0.38vw; height: 3.6vh; min-height: 20px; border-radius: 999px;
+  background: linear-gradient(180deg, #60a5fa, #a855f7);
+  box-shadow: 0 0 1.4vh rgba(96, 165, 250, 0.45);
+}
+.sc-hot-title { font-size: clamp(24px, 2.7vw, 56px); font-weight: 900; letter-spacing: 0.03em; color: #f8fafc; }
+.sc-hot-sub { font-size: clamp(12px, 1.1vw, 21px); color: #94a3b8; font-weight: 600; letter-spacing: 0.05em; }
 .sc-hot-cols {
   flex: 1; min-height: 0;
   display: grid; grid-template-columns: 1fr 1fr; gap: 2.4vw;
   padding-top: 2vh;
 }
 .sc-hot-col { display: flex; flex-direction: column; min-height: 0; }
-.sc-hot-col-head { display: flex; align-items: baseline; gap: 0.8vw; padding-bottom: 1vh; }
+.sc-hot-col-head { display: flex; align-items: center; gap: 0.7vw; padding-bottom: 1.1vh; }
+.sc-hot-dot {
+  flex: 0 0 auto; width: 0.72vw; height: 0.72vw; min-width: 8px; min-height: 8px;
+  border-radius: 999px;
+}
 .sc-hot-team { font-size: clamp(22px, 2.4vw, 50px); font-weight: 900; }
 .sc-hot-role {
-  font-size: clamp(12px, 1.1vw, 22px); font-weight: 700; color: #9ca3af;
-  border: 1px solid #374151; border-radius: 999px; padding: 0.2em 0.9em; white-space: nowrap;
+  font-size: clamp(12px, 1.05vw, 21px); font-weight: 700; color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px;
+  padding: 0.18em 0.85em; white-space: nowrap;
 }
-.sc-hot-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 1.4vh; }
+.sc-hot-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 1.3vh; }
 .sc-hot-item {
   flex: 1; min-height: 0;
   display: flex; align-items: center; gap: 1vw;
   padding: 0 1.2vw;
   border-radius: 1.2vh;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .sc-hot-rank {
-  flex: 0 0 auto; width: 1.7em; text-align: center;
-  font-size: clamp(20px, 2.1vw, 44px); font-weight: 900; font-style: italic; color: #4b5563;
+  flex: 0 0 auto; width: 1.6em; text-align: center;
+  font-size: clamp(18px, 1.9vw, 40px); font-weight: 900; font-style: italic;
+  color: #64748b; font-variant-numeric: tabular-nums;
 }
 .sc-hot-avatar { font-size: clamp(30px, 3.2vw, 66px); width: 1.7em; height: 1.7em; }
-.sc-hot-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25em; }
+.sc-hot-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3em; }
 .sc-hot-name {
-  font-size: clamp(20px, 2vw, 42px); font-weight: 800; color: #fff;
+  font-size: clamp(20px, 2vw, 42px); font-weight: 800; color: #fff; letter-spacing: 0.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.sc-hot-jersey { color: #9ca3af; margin-right: 0.35em; font-weight: 700; }
-.sc-hot-line { font-size: clamp(12px, 1.15vw, 24px); color: #9ca3af; font-weight: 600; }
+.sc-hot-jersey { color: #94a3b8; margin-right: 0.35em; font-weight: 700; }
+.sc-hot-line { font-size: clamp(12px, 1.1vw, 23px); color: #94a3b8; font-weight: 600; letter-spacing: 0.02em; }
 .sc-hot-eff {
-  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; padding-left: 0.6vw;
+  flex: 0 0 auto; align-self: stretch; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
+  padding-left: 1vw; margin-left: 0.4vw;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
-.sc-hot-eff b { font-size: clamp(30px, 3.4vw, 72px); font-weight: 900; font-variant-numeric: tabular-nums; color: #fff; }
-.sc-hot-eff em { font-size: clamp(11px, 1vw, 20px); font-style: normal; font-weight: 700; color: #6b7280; letter-spacing: 0.1em; }
+.sc-hot-eff b { font-size: clamp(28px, 3.2vw, 68px); font-weight: 900; font-variant-numeric: tabular-nums; color: #fff; line-height: 1; }
+.sc-hot-eff em { font-size: clamp(11px, 0.95vw, 19px); font-style: normal; font-weight: 700; color: #64748b; letter-spacing: 0.14em; margin-top: 0.3em; }
 .sc-hot-empty { margin: auto; font-size: clamp(16px, 1.6vw, 32px); color: #4b5563; }
 
 /* 高效页入场动画：标题淡入下滑，球员卡片按 1/2/3 顺序逐张淡入上浮（不突出头名） */
@@ -1477,6 +1779,18 @@ onBeforeUnmount(() => {
   opacity: 0; pointer-events: none; transition: opacity 0.3s;
   display: flex; align-items: center; justify-content: center;
 }
+/* 窗口模式下的「回到全屏」按钮：常驻底部居中，避免与顶部「返回比分」页签重叠 */
+.sc-fs {
+  position: absolute; bottom: 1.5vh; left: 50%; transform: translateX(-50%); z-index: 10;
+  height: clamp(34px, 2.8vw, 52px); padding: 0 clamp(12px, 1.1vw, 22px);
+  border-radius: 999px; border: 1px solid #3b82f6;
+  background: rgba(15, 23, 42, 0.75); color: #93c5fd;
+  font-size: clamp(13px, 1.3vw, 24px); font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 0.4em;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.sc-fs:hover { background: #1d4ed8; color: #fff; border-color: #60a5fa; }
+
 .sc-exit-visible { opacity: 1; pointer-events: auto; }
 .sc-exit:hover { color: #fff; border-color: #fff; }
 .sc-exit-hint {

@@ -60,10 +60,12 @@
               目标 <span class="text-accent-400 font-bold">{{ gameStore.currentGame.target_score }}</span> 分
               <span class="text-dark-600 mx-0.5">·</span>第 <span class="text-white font-bold">{{ virtualQuarter }}</span> 节
             </div>
-            <div v-else class="text-sm text-white font-semibold mt-1">
-              {{ quarterLabel(gameStore.currentGame.current_quarter, gameStore.currentGame.quarters) }}
-              <span class="text-xs ml-1 tabular-nums"
-                :class="remainingSecs <= 60 && clockRunning ? 'text-danger-light font-bold animate-pulse' : 'text-dark-400'">
+            <div v-else class="flex items-baseline gap-2 mt-1">
+              <span class="text-sm sm:text-base font-bold text-white">
+                {{ quarterLabel(gameStore.currentGame.current_quarter, gameStore.currentGame.quarters) }}
+              </span>
+              <span class="text-2xl sm:text-3xl font-black tabular-nums leading-none"
+                :class="remainingSecs <= 60 && clockRunning ? 'text-danger-light animate-pulse' : 'text-dark-400'">
                 {{ fmtClock(remainingSecs) }}
               </span>
             </div>
@@ -103,77 +105,146 @@
         </div>
       </div>
 
-      <!-- 操控按钮区 -->
-      <div class="px-2 sm:px-3 py-2 flex items-center gap-1.5 sm:gap-2 border-b border-dark-700/30 bg-dark-850/50">
+      <!-- 计时控制条（正式制：进攻时间 + 时间回表）；未开赛时仅记录员可见开关，用于赛前设定 -->
+      <div v-if="showClockBar"
+        class="px-2 sm:px-3 py-2 flex flex-wrap items-center gap-2 border-b border-dark-700/30 bg-dark-900/70">
+        <!-- 24 秒功能开关：关闭后本页与大屏都不显示进攻时间 -->
+        <button @click="toggleShotClockEnabled" :disabled="!canManageGame"
+          class="h-9 px-2.5 rounded-lg text-xs font-bold border transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 flex items-center gap-1.5"
+          :class="shotClockEnabled
+            ? 'border-primary-500/50 bg-primary-600/15 text-primary-300 hover:bg-primary-600/25'
+            : 'border-dark-700 bg-dark-800 text-dark-500 hover:bg-dark-700'">
+          <span class="relative w-7 h-4 rounded-full transition-colors flex-shrink-0"
+            :class="shotClockEnabled ? 'bg-primary-500' : 'bg-dark-600'">
+            <span class="absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all duration-200"
+              :class="shotClockEnabled ? 'left-3.5' : 'left-0.5'"></span>
+          </span>
+          <span class="whitespace-nowrap">进攻计时</span>
+        </button>
+
+        <template v-if="shotClockEnabled && gameStore.currentGame.status !== 'pending'">
+          <!-- 进攻时间显示 -->
+          <div class="flex items-center gap-2 h-9 px-3 rounded-lg bg-dark-850 border border-dark-700/60 flex-shrink-0">
+            <span class="text-[10px] font-bold tracking-widest text-dark-500">进攻</span>
+            <span class="w-[2.2em] text-center font-black tabular-nums leading-none text-xl sm:text-2xl"
+              :class="shotClockDanger ? 'text-red-400 animate-pulse' : 'text-white'">{{ shotClockSecs }}</span>
+            <span v-if="!shotClockRunning" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-dark-700 text-dark-400">停</span>
+          </div>
+          <button @click="setShotClock(24)" :disabled="!canManageGame"
+            class="h-9 px-3 rounded-lg text-xs font-bold border border-dark-700 bg-dark-800 text-white hover:bg-dark-700 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+            24秒
+          </button>
+          <button @click="setShotClock(14)" :disabled="!canManageGame"
+            class="h-9 px-3 rounded-lg text-xs font-bold border border-dark-700 bg-dark-800 text-white hover:bg-dark-700 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+            14秒
+          </button>
+          <button @click="toggleShotClock" :disabled="!canManageGame"
+            class="h-9 px-3 rounded-lg text-xs font-bold border bg-dark-800 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            :class="shotClockRunning ? 'border-amber-500/40 text-amber-300 hover:bg-dark-700' : 'border-green-500/40 text-green-300 hover:bg-dark-700'">
+            {{ shotClockRunning ? '⏸ 暂停进攻' : '▶ 启动进攻' }}
+          </button>
+        </template>
+
+        <div class="flex-1"></div>
+
+        <!-- 时间回表 -->
+        <div v-if="gameStore.currentGame.status !== 'pending'"
+          class="flex items-center gap-1.5 h-9 px-2.5 rounded-lg bg-dark-850 border border-dark-700/60 flex-shrink-0">
+          <span class="text-[10px] font-bold tracking-widest text-dark-500">回表</span>
+          <input v-model="backMin" type="number" min="0" max="59" inputmode="numeric"
+            class="w-10 h-6 px-1 rounded bg-dark-900 border border-dark-700 text-center text-xs text-white tabular-nums focus:border-primary-500 outline-none" />
+          <span class="text-dark-500 text-xs">:</span>
+          <input v-model="backSec" type="number" min="0" max="59" inputmode="numeric"
+            class="w-10 h-6 px-1 rounded bg-dark-900 border border-dark-700 text-center text-xs text-white tabular-nums focus:border-primary-500 outline-none" />
+          <button @click="applyBack" :disabled="!canManageGame"
+            class="h-6 px-2.5 rounded text-[11px] font-bold bg-primary-600 text-white hover:bg-primary-500 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+            设定
+          </button>
+        </div>
+
+        <!-- 加时：在剩余基础上增加 N 秒（N 由记录员输入） -->
+        <div v-if="gameStore.currentGame.status !== 'pending'"
+          class="flex items-center gap-1.5 h-9 px-2.5 rounded-lg bg-dark-850 border border-dark-700/60 flex-shrink-0">
+          <span class="text-[10px] font-bold tracking-widest text-dark-500">加时</span>
+          <input v-model="addSecs" type="number" min="0" max="600" inputmode="numeric"
+            class="w-12 h-6 px-1 rounded bg-dark-900 border border-dark-700 text-center text-xs text-white tabular-nums focus:border-primary-500 outline-none" />
+          <button @click="addGameClock(addSecs)" :disabled="!canManageGame"
+            class="h-6 px-2.5 rounded text-[11px] font-bold bg-primary-600 text-white hover:bg-primary-500 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+            ＋{{ addSecs === '' ? 0 : addSecs }}秒
+          </button>
+        </div>
+      </div>
+
+      <!-- 操控按钮区（功能键统一样式：同高 / 同圆角 / 同字号 / 中性深底 + 语义色） -->
+      <div class="px-2 sm:px-3 py-2 flex flex-wrap items-center gap-2 border-b border-dark-700/30 bg-dark-850/50">
         <!-- 开始 -->
         <button v-if="gameStore.currentGame.status === 'pending'" @click="startGame" :disabled="starting || !canManageGame"
-          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-          :class="starting ? 'bg-green-800 text-green-300 cursor-wait' : 'bg-green-600 text-white'">
+          class="h-9 px-3 rounded-lg text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          :class="starting ? 'bg-green-800 text-green-300' : 'bg-green-600 hover:bg-green-500'">
           {{ starting ? '开始中' : '开始' }}
         </button>
 
         <!-- 结束 -->
         <button v-if="gameStore.currentGame.status === 'active'" @click="endGame" :disabled="ending || !canManageGame"
-          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-          :class="ending ? 'bg-red-800 text-red-300 cursor-wait' : 'bg-red-600 text-white'">
+          class="h-9 px-3 rounded-lg text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          :class="ending ? 'bg-red-800 text-red-300' : 'bg-red-600 hover:bg-red-500'">
           {{ ending ? '结束中' : '结束' }}
         </button>
 
-        <!-- 暂停/继续（正式制节间休息时显示"开始第X节"）——高亮为主控按钮 -->
+        <!-- 暂停/继续（正式制节间休息时显示"开始第X节"）——唯一主控高亮 -->
         <button v-if="gameStore.currentGame.status === 'active'" @click="togglePause"
-          class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-black transition-all active:scale-95 whitespace-nowrap ring-1"
+          class="h-9 px-4 rounded-lg text-xs sm:text-sm font-black transition-all active:scale-95 whitespace-nowrap"
           :class="isPaused
-            ? 'bg-green-500 text-white ring-green-300/60 shadow-[0_0_14px_rgba(34,197,94,0.55)]'
-            : 'bg-amber-400 text-black ring-amber-200/70 shadow-[0_0_14px_rgba(251,191,36,0.6)]'">
+            ? 'bg-green-500 text-white shadow-[0_0_14px_rgba(34,197,94,0.4)]'
+            : 'bg-amber-400 text-black shadow-[0_0_14px_rgba(251,191,36,0.35)]'">
           {{ isPaused ? (quarterBreak ? `▶开始${quarterLabel(gameStore.currentGame.current_quarter, gameStore.currentGame.quarters)}` : '▶继续') : '⏸ 暂停' }}
+        </button>
+
+        <!-- 本节结束（仅正式制） -->
+        <button v-if="gameStore.currentGame.status === 'active' && gameStore.currentGame.game_type !== 'entertainment'" @click="endQuarter()"
+          :disabled="!canManageGame || isPaused"
+          class="h-9 px-3 rounded-lg text-xs font-bold border border-dark-700 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          :class="isPaused ? 'bg-dark-800 text-dark-600' : 'bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white'">
+          本节结束
         </button>
 
         <!-- 强制同步 -->
         <button @click="handleForceSync" :disabled="syncing"
-          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-          :class="syncing ? 'bg-dark-800 text-dark-600 cursor-not-allowed' : 'bg-blue-600/80 text-white hover:bg-blue-600'">
-          {{ syncing ? '同步中' : '⬆同步' }}
-        </button>
-
-        <!-- 本节结束（仅正式制，手机端和电脑端都显示） -->
-        <button v-if="gameStore.currentGame.status === 'active' && gameStore.currentGame.game_type !== 'entertainment'" @click="endQuarter()"
-          :disabled="!canManageGame || isPaused"
-          class="px-2 sm:px-3 py-1.5 sm:py-1 rounded-md text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-          :class="isPaused ? 'bg-dark-800 text-dark-600 cursor-not-allowed' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'">
-          本节结束
+          class="h-9 px-3 rounded-lg text-xs font-bold border border-dark-700 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          :class="syncing ? 'bg-dark-800 text-dark-600' : 'bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white'">
+          {{ syncing ? '同步中' : '⬆ 同步' }}
         </button>
 
         <div class="flex-1"></div>
 
         <!-- 录队切换 -->
-        <div class="flex items-center gap-0.5 sm:gap-1 mr-1 sm:mr-2">
+        <div class="flex items-center gap-1">
           <button v-for="opt in recordModeOptions" :key="opt.value"
             @click="recordMode = opt.value"
-            class="px-1.5 sm:px-2 py-1.5 sm:py-1 rounded-md text-[9px] sm:text-[10px] font-bold transition-all whitespace-nowrap"
+            class="h-9 px-3 rounded-lg text-[11px] font-bold border transition-all whitespace-nowrap"
             :class="recordMode === opt.value
-              ? 'bg-primary-600 text-white'
-              : 'bg-dark-800 text-dark-400 hover:text-white'">
+              ? 'bg-primary-600 border-primary-500 text-white'
+              : 'bg-dark-800 border-dark-700 text-dark-300 hover:text-white'">
             {{ opt.label }}
           </button>
         </div>
 
         <!-- 状态 -->
-        <div v-if="isPaused" class="flex items-center gap-1 text-yellow-400 text-[9px] sm:text-[10px] flex-shrink-0">
-          <span class="w-1 h-1 rounded-full bg-yellow-400"></span>
-          <span class="hidden sm:inline">已暂停</span>
-          <span class="sm:hidden">暂停</span>
+        <div v-if="isPaused" class="flex items-center gap-1 text-amber-400 text-[10px] flex-shrink-0">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+          <span>已暂停</span>
         </div>
-        <div v-else-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[9px] sm:text-[10px] flex-shrink-0">
-          <span class="w-1 h-1 rounded-full bg-green-400 animate-pulse"></span>
+        <div v-else-if="gameStore.currentGame.status === 'active'" class="flex items-center gap-1 text-green-400 text-[10px] flex-shrink-0">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
           LIVE
         </div>
-        <div v-if="gameStore.currentGame.status === 'finished'" class="text-primary-400 text-[9px] sm:text-[10px] flex-shrink-0">
+        <div v-if="gameStore.currentGame.status === 'finished'" class="text-primary-400 text-[10px] flex-shrink-0">
           已结束
         </div>
       </div>
 
       <!-- 主内容：两队面板 -->
-      <div class="flex gap-0 overflow-hidden" style="height: calc(100vh - 280px);">
+      <div class="flex gap-0 overflow-hidden" style="height: calc(100vh - 336px);">
         <!-- 主队面板 -->
         <TeamPanel
           v-show="recordMode === 'both' || recordMode === 'home'"
@@ -277,6 +348,12 @@ const homePanelRef = ref(null)
 const awayPanelRef = ref(null)
 const syncing = ref(false)
 
+// ── 进攻时间（24 秒）与时间回表 ──
+const backMin = ref('')
+const backSec = ref('')
+// 加时秒数：在剩余时间基础上增加 N 秒（N 由记录员自行输入）
+const addSecs = ref(10)
+
 // ── 队伍犯规（本节）── 组合式函数与详情页共用，含娱乐赛虚拟节逻辑
 const { teamFouls, virtualQuarter, loadTeamFouls } = useTeamFouls(
   () => gameStore.currentGame,
@@ -310,9 +387,15 @@ async function handleTimeout({ teamId, delta }) {
     showToast('❌ 暂停记录失败')
     return
   }
-  if (delta > 0 && g.status === 'active' && !g.is_paused) {
-    try { await setPaused(true) } catch (e) { /* 停表失败不影响暂停计数 */ }
-    showToast('⏸ 已记录暂停，比赛已停表')
+  if (delta > 0 && g.status === 'active') {
+    if (!g.is_paused) {
+      try { await setPaused(true, 'team') } catch (e) { /* 停表失败不影响暂停计数 */ }
+      showToast('⏸ 已记录暂停，比赛已停表')
+    } else {
+      // 已在暂停中记录队伍暂停：把标记切为 team，大屏随即进入轮播
+      try { await supabase.rpc('set_pause_kind', { p_game_id: gameId, p_kind: 'team' }) } catch (e) {}
+      showToast('⏸ 已记录暂停')
+    }
   } else {
     showToast(delta > 0 ? '⏸ 已记录暂停' : '↩ 已撤销暂停')
   }
@@ -381,6 +464,13 @@ const isPaused = ref(false)
 
 // ── 正式制倒计时 ──
 const isOfficial = computed(() => gameStore.currentGame?.game_type === 'official')
+// 计时控制条：正式制且未取消；未开赛时仅对可管理人员显示（用于赛前设定 24 秒开关）
+const showClockBar = computed(() => {
+  const g = gameStore.currentGame
+  if (!g || !isOfficial.value || g.status === 'cancelled') return false
+  if (g.status === 'pending') return canManageGame.value
+  return true
+})
 const clockRunning = computed(() =>
   isOfficial.value && gameStore.currentGame?.status === 'active' && !isPaused.value
 )
@@ -403,6 +493,27 @@ const remainingSecs = computed(() => {
   const elapsed = Math.max(0, Math.floor((nowTs.value - anchor) / 1000))
   return Math.max(0, base - elapsed)
 })
+
+// ── 进攻时间（24 秒）── 与比赛时钟联动：比赛时钟停表（暂停/节间/未开赛/已结束）时必停，
+// 比赛进行中记录员可通过「暂停进攻 / 启动进攻」单独控制走表
+const shotClockRunning = computed(() =>
+  clockRunning.value && !!gameStore.currentGame?.shot_clock_running
+)
+const shotClockSecs = computed(() => {
+  const g = gameStore.currentGame
+  if (!g || !isOfficial.value) return 0
+  const base = g.shot_clock ?? 24
+  if (!shotClockRunning.value) return Math.max(0, base)
+  if (!g.shot_clock_updated_at) return Math.max(0, base)
+  const anchor = new Date(g.shot_clock_updated_at).getTime()
+  if (!anchor || Number.isNaN(anchor)) return Math.max(0, base)
+  const elapsed = Math.max(0, Math.floor((nowTs.value - anchor) / 1000))
+  return Math.max(0, base - elapsed)
+})
+const shotClockDanger = computed(() => shotClockRunning.value && shotClockSecs.value <= 5)
+
+// 24 秒功能开关（默认开启；字段缺失时按开启处理，兼容尚未执行 SQL 的旧库）
+const shotClockEnabled = computed(() => gameStore.currentGame?.shot_clock_enabled !== false)
 
 // 倒计时归零 → 自动结束本节（切到下一节或全场结束）
 watch(remainingSecs, (v) => {
@@ -500,6 +611,9 @@ async function startGame() {
   if (!confirm('确认开始比赛？')) return
   starting.value = true
   try {
+    // 先建球员快照（含 12 人名单校验：超员队未选名单会在此拦截，比赛不会开始）
+    const { error: snapErr } = await supabase.rpc('snapshot_game_players', { p_game_id: gameId })
+    if (snapErr) throw new Error(snapErr.message)
     const { error } = await supabase.rpc('update_game_status', {
       p_game_id: gameId,
       p_status: 'active',
@@ -512,12 +626,25 @@ async function startGame() {
       gameStore.currentGame.status = 'active'
       gameStore.currentGame.started_at = new Date().toISOString()
       gameStore.currentGame.clock_updated_at = new Date().toISOString()
+      // 开始比赛：进攻时间复位为 24，随比赛时钟一起走表（关闭 24 秒功能时不动）
+      if (shotClockEnabled.value) {
+        gameStore.currentGame.shot_clock = 24
+        gameStore.currentGame.shot_clock_running = true
+        gameStore.currentGame.shot_clock_updated_at = new Date().toISOString()
+      }
     }
-    // 全员快照：所有注册球员立即拥有 game_stats 行，排行榜马上可见全员
+    // 全员快照已在开赛前完成（含名单过滤），此处仅兜底补全
     supabase.rpc('snapshot_game_players', { p_game_id: gameId })
       .then(({ error: snapErr }) => {
         if (snapErr) console.warn('[snapshot] 全员快照失败:', snapErr.message)
       })
+    // 进攻时间显式写库（24 秒 + 走表），保证大屏等其他端与记录页口径一致
+    if (shotClockEnabled.value) {
+      supabase.rpc('set_shot_clock', { p_game_id: gameId, p_seconds: 24, p_running: true })
+        .then(({ error: scErr }) => {
+          if (scErr) console.warn('[shot_clock] 进攻时间初始化失败:', scErr.message)
+        })
+    }
   } catch (e) {
     showToast('开始失败：' + (e.message || '未知错误'))
   } finally {
@@ -546,7 +673,7 @@ async function endGame() {
   }
 }
 
-async function setPaused(newVal) {
+async function setPaused(newVal, kind = 'clock') {
   // 必须在翻转 isPaused 之前取值：翻转后 remainingSecs 会切回旧基准值，导致显示闪跳
   const frozenSecs = remainingSecs.value
   const params = {
@@ -558,14 +685,143 @@ async function setPaused(newVal) {
   if (newVal && isOfficial.value) params.p_clock_remaining = frozenSecs
   const { error } = await supabase.rpc('update_game_status', params)
   if (error) throw error
+  // 暂停类型标记：'team' 队伍暂停（大屏轮播）/ 'clock' 总暂停停表（大屏停留比分页）；恢复时清空
+  try {
+    await supabase.rpc('set_pause_kind', { p_game_id: gameId, p_kind: newVal ? kind : null })
+  } catch (e) { /* 标记失败不影响停表；需先在 Supabase 执行 add_pause_kind.sql */ }
   isPaused.value = newVal
   gameStore.currentGame.is_paused = newVal
   if (isOfficial.value) {
     // 暂停：写入冻结秒数；恢复：重置基准时间，避免用暂停期间的旧锚点倒扣
     if (newVal) gameStore.currentGame.quarter_clock = frozenSecs
     gameStore.currentGame.clock_updated_at = new Date().toISOString()
+    // 进攻时间随比赛时钟联动：暂停冻结当前剩余值，恢复从冻结值继续走表（与 update_game_status 一致）
+    // 关闭 24 秒功能时不参与联动，避免重新开启时出现残值
+    if (shotClockEnabled.value) {
+      const g = gameStore.currentGame
+      if (newVal) g.shot_clock = shotClockSecs.value
+      g.shot_clock_running = !newVal
+      g.shot_clock_updated_at = new Date().toISOString()
+    }
   }
   if (!newVal) quarterBreak.value = false  // 恢复 = 开始下一节 / 继续比赛
+}
+
+// ── 进攻时间操作（24 / 14 / 暂停启动）──
+// secs 为 null 表示不改变数值（仅切换走表状态），与 set_shot_clock 语义一致
+async function applyShotClock(secs, running) {
+  const g = gameStore.currentGame
+  if (!g || !canManageGame.value) return null
+  const prev = { shot_clock: g.shot_clock, shot_clock_running: g.shot_clock_running, shot_clock_updated_at: g.shot_clock_updated_at }
+  const nextValue = secs != null ? secs : shotClockSecs.value
+  gameStore.currentGame = {
+    ...g,
+    shot_clock: nextValue,
+    shot_clock_running: running,
+    shot_clock_updated_at: new Date().toISOString()
+  }
+  try {
+    const { error } = await supabase.rpc('set_shot_clock', { p_game_id: gameId, p_seconds: secs, p_running: running })
+    if (error) throw error
+  } catch (e) {
+    gameStore.currentGame = { ...gameStore.currentGame, ...prev }
+    showToast('❌ 进攻时间操作失败')
+    return null
+  }
+  return nextValue
+}
+
+// 重置进攻时间（24 / 14）：保持当前走表状态（比赛停表或已单独暂停进攻时保持停表）
+async function setShotClock(secs) {
+  const v = await applyShotClock(secs, shotClockRunning.value)
+  if (v != null) showToast(`⏱ 进攻时间重置为 ${v} 秒`)
+}
+
+// 单独启停进攻时间：比赛进行中才可操作；比赛时钟停表时进攻时间必停
+async function toggleShotClock() {
+  if (!clockRunning.value) {
+    showToast('比赛时钟未走表，进攻时间已同步停止')
+    return
+  }
+  const running = shotClockRunning.value
+  const v = await applyShotClock(null, !running)
+  if (v != null) showToast(running ? '⏸ 进攻时间已暂停' : '▶ 进攻时间已启动')
+}
+
+// ── 24 秒功能开关 ──
+// 关闭：本页隐藏进攻时间操作区，大屏同步隐藏（通过 games 表实时同步）
+// 开启：复位为 24 秒；比赛进行中则随比赛时钟一起走表
+async function toggleShotClockEnabled() {
+  const g = gameStore.currentGame
+  if (!g || !canManageGame.value) return
+  const next = !shotClockEnabled.value
+  const prev = g.shot_clock_enabled
+  const prevClock = { shot_clock: g.shot_clock, shot_clock_running: g.shot_clock_running, shot_clock_updated_at: g.shot_clock_updated_at }
+  // 乐观更新：开关立即响应
+  gameStore.currentGame = {
+    ...g,
+    shot_clock_enabled: next,
+    shot_clock_running: false,
+    shot_clock_updated_at: new Date().toISOString()
+  }
+  try {
+    const { error } = await supabase.rpc('set_shot_clock_enabled', { p_game_id: gameId, p_enabled: next })
+    if (error) throw error
+  } catch (e) {
+    gameStore.currentGame = { ...gameStore.currentGame, shot_clock_enabled: prev, ...prevClock }
+    const msg = String(e?.message || '')
+    showToast(msg.includes('function') || msg.includes('does not exist')
+      ? '❌ 请先在 Supabase 执行 add_shot_clock_toggle.sql'
+      : '❌ 切换失败：' + (msg || '未知错误'))
+    return
+  }
+  if (next) {
+    // 重新开启：统一复位为 24 秒（比赛进行中随比赛时钟走表，未走表则停表等待）
+    await applyShotClock(24, clockRunning.value)
+    showToast(clockRunning.value ? '🕐 进攻计时已开启（24 秒）' : '🕐 进攻计时已开启（停表，开赛后自动走表）')
+  } else {
+    showToast('🚫 进攻计时已关闭（大屏同步隐藏）')
+  }
+}
+
+// ── 时间回表：把比赛剩余时间设定为指定秒数（突发状况校正）──
+async function setGameClockBack(totalSecs) {
+  const g = gameStore.currentGame
+  if (!g || !canManageGame.value) return
+  const secs = Math.max(0, Math.round(totalSecs))
+  if (!Number.isFinite(secs)) return
+  const prev = { quarter_clock: g.quarter_clock, clock_updated_at: g.clock_updated_at }
+  gameStore.currentGame = { ...g, quarter_clock: secs, clock_updated_at: new Date().toISOString() }
+  try {
+    const { error } = await supabase.rpc('set_quarter_clock', { p_game_id: gameId, p_seconds: secs })
+    if (error) throw error
+  } catch (e) {
+    gameStore.currentGame = { ...gameStore.currentGame, ...prev }
+    showToast('❌ 回表失败')
+    return
+  }
+  showToast(`⏱ 已回表至 ${fmtClock(secs)}`)
+}
+
+// 加时：在当前剩余时间基础上增加 N 秒
+function addGameClock(delta) {
+  const d = Math.round(Number(delta))
+  if (!Number.isFinite(d) || d <= 0) {
+    showToast('请输入要增加的秒数')
+    return
+  }
+  setGameClockBack(remainingSecs.value + d)
+}
+
+// 设定回表：按输入的 分/秒 覆盖剩余时间
+function applyBack() {
+  const m = parseInt(backMin.value, 10)
+  const s = parseInt(backSec.value, 10)
+  if ((backMin.value === '' && backSec.value === '') || (Number.isNaN(m) && Number.isNaN(s))) {
+    showToast('请输入要回表到的分/秒')
+    return
+  }
+  setGameClockBack((Number.isNaN(m) ? 0 : m) * 60 + (Number.isNaN(s) ? 0 : s))
 }
 
 async function togglePause() {
@@ -612,6 +868,10 @@ async function endQuarter(auto = false) {
         g.quarter_clock = isOt ? (g.overtime_seconds ?? 300) : (g.quarter_seconds || 600)
         g.is_paused = true
         g.clock_updated_at = new Date().toISOString()
+        // 进攻时间复位（新一节/加时从 24 秒起，节间休息停表）
+        g.shot_clock = 24
+        g.shot_clock_running = false
+        g.shot_clock_updated_at = new Date().toISOString()
       }
       showToast(isOt
         ? `🔥 常规时间战平，进入${quarterLabel(data.quarter, quarters)}（${Math.round((g?.overtime_seconds ?? 300) / 60)} 分钟）`
