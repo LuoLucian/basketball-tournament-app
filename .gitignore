@@ -7,4 +7,5 @@ WORK_RECORD.md
 nul
 site.zip
 .workbuddy/
+.tmp/
 supabase/*.csv
